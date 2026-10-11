@@ -228,6 +228,30 @@ try {
   assert.deepEqual(board.components.map(component => component.designator).sort(), ['R1', 'R2']);
   assert.deepEqual(board.pads.find(pad => pad.name === 'debug.GND').hole, { diameter: 0.3, x: 0.05, y: -0.02 });
 
+  for (const localLayout of ['', 'localLayout: {R1:{x:0,y:0,rotate:0},R2:{x:5,y:0,rotate:0}},']) {
+    const blockFile = join(directory, 'block-preview.js');
+    const blockCode = `board.rect(40,30); block("divider", ["R1","R2"], "generic", {
+      ${localLayout} fixed: {reference:"R1",x:5,y:3,rotate:90}
+    });`;
+    await writeFile(blockFile, blockCode + '\nsolver({previewBlock:"divider"});');
+    const beforePreview = requests.filter(r => r.event === 'assemble-board').length;
+    const preview = await call('make_pcb_layout', { file: blockFile, wait_ms: 55_000 });
+    assert.equal(preview.kind, 'block-preview', JSON.stringify(preview));
+    assert.equal(preview.layoutId, undefined, 'Block previews must not be stored as board assemblies');
+    assert.equal(preview.blockPreview.placementOk, true, JSON.stringify(preview));
+    assert.equal(preview.toolReport.status, 'preview');
+    assert.deepEqual(preview.blockPreview.blocks, ['divider']);
+    const reference = preview.blockPreview.placements.find(p => p.designator === 'R1');
+    assert.deepEqual([reference.x, reference.y, reference.rotate], [5, 3, 90]);
+    assert.deepEqual([...await readFile(preview.previewImagePath)].slice(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.match(await readFile(preview.previewSvgPath, 'utf8'), /Block preview: divider/);
+    assert.equal((await call('wait_operation', { operation_id: preview.operation_id, wait_ms: 1000 })).kind, 'block-preview');
+    assert.equal(requests.filter(r => r.event === 'assemble-board').length, beforePreview);
+    await writeFile(blockFile, blockCode);
+    const fixedLayout = await call('make_pcb_layout', { file: blockFile, wait_ms: 55_000 });
+    assert.ok(fixedLayout.layoutId, JSON.stringify(fixedLayout));
+  }
+
   const invalidFile = join(directory, 'invalid.js');
   await writeFile(invalidFile, 'invalid_call();');
   const invalid = await call('make_pcb_layout', { file: invalidFile, wait_ms: 55_000 });

@@ -1,6 +1,28 @@
 # PCB placement
 
-`make_pcb_layout` creates placement and mechanics only. It returns a preview and stored `layoutId`; it does not apply the result or authorize routing.
+`make_pcb_layout` creates placement and mechanics only. Full placement returns a preview and stored `layoutId`; it does not apply the result or authorize routing. `solver({ previewBlock: "name" })` returns only a block preview, with no `layoutId` to assemble.
+
+## Preview a block before full placement
+
+If you are unsure about a block's quality, run `make_pcb_layout` with `solver({ previewBlock: "power" })` in the DSL. Keep the other block definitions in the file. This resolves and fully solves only `power` and its satellites, using the same local algorithms and search stages as normal placement. It works with or without `localLayout`. It skips all other blocks, board packing and global refinement.
+
+Inspect `previewImagePath` (or `previewSvgPath`), `blockPreview.placements`, `blockPreview.bbox`, `blockPreview.placementOk` and `toolReport`. Check actual pad connections, local clearances and layout quality. A failed solve can still return an image; do not treat that as success. Revise the block if needed. Remove `previewBlock` before full placement and assembly.
+
+The result has `kind: "block-preview"` and no assembly `layoutId`. External connections, parent/module positioning and board-level hints are unassessed. A standalone satellite preview does not solve its parent. `edgePlace` requires board packing and is reported unresolved. Do not combine `previewBlock` with `placeOnlyComponents` or `ignoreComponents`.
+
+## Fix a complete block on the board
+
+When a functional block must occupy a precise board location, use:
+
+```ts
+block("power", ["U1", "L1", "C1"], "power", {
+  fixed: { reference: "U1", x: 20, y: -10, rotate: 90 },
+});
+```
+
+The block and its satellites are solved locally first, then moved and rotated together so U1's center is at `(20, -10)` mm and its final angle is 90 degrees. Every member keeps that resolved pose through board packing and final refinement, even when listed in `refineGroup`. `localLayout` is optional; fixation and preview are independent.
+
+The reference must be a direct member. Fixed blocks must be root blocks outside modules, with no independently fixed/edge-mounted/preserved members or fixed board pads. Supported reference angles are 0/90/180/270; the layer does not flip. Invalid orientations and physical conflicts are errors, not permission to move the fixed block. Keep ordinary blocks free when their board position is not prescribed. Fixation does not cache a previous preview.
 
 Read `dsl.ts` as the exact syntax source. The files in `examples/` are patterns, not authority. They use the same order: board and global rules, functional blocks, components and mechanics, electrical placement intent, then output and solver. Read any examples that help, but derive designators, dimensions, pin numbers, and constraints from the actual board.
 

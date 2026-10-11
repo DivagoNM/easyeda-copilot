@@ -22,6 +22,7 @@ type MakePcbLayoutResponse = {
     content?: string;
     toolReport?: unknown;
     pcb?: BackendBoardAssemble;
+    blockPreview?: { name: string };
     preview_image_url?: string;
     placement_debug_artifacts?: PlacementDebugArtifactsResponse;
     error?: string;
@@ -148,7 +149,7 @@ function rememberPcbLayout(layoutId: string, layout: StoredPcbLayout) {
 
 async function storeMakePcbLayoutResult(result: MakePcbLayoutResponse) {
     const runId = randomUUID();
-    const layoutId = result.pcb ? runId : undefined;
+    const layoutId = result.pcb && !result.blockPreview ? runId : undefined;
     const { pngPath: previewImagePath, svgPath: previewSvgPath } = await writePreviewImageFiles(result.preview_image_url, runId);
     const debugArtifacts = await writePlacementDebugArtifactFiles(result.placement_debug_artifacts, runId);
 
@@ -261,6 +262,11 @@ async function runPcbLayout(
         status: 'completed' as const,
         operation_id: context.id,
         ...stored,
+        ...('blockPreview' in result && result.blockPreview ? {
+            kind: 'block-preview' as const,
+            blockPreview: result.blockPreview,
+            toolReport: result.toolReport,
+        } : {}),
         content: result.content ?? 'PCB layout finished.',
     };
 }
@@ -321,7 +327,7 @@ export function registerPcbLayoutTools(server: McpServer, bridge: Bridge) {
         'make_pcb_layout',
         {
             title: 'Make PCB Layout',
-            description: `Create PCB component placement from a JavaScript DSL file. Open the target PCB first so its outline and component positions are supplied as existingPlacement. Long work returns an operation_id for wait_operation. This tool does not assemble or route the board. For PCB layout docs, read: ${SKILL_DOC_PATH}`,
+            description: `Create PCB component placement from a JavaScript DSL file. Use solver({ previewBlock: "name" }) to fully solve and preview only one block family when its quality is uncertain; returns image paths and blockPreview diagnostics without an assembly layoutId. Both block preview and block.fixed work without localLayout. Open the target PCB first so its outline and component positions are supplied as existingPlacement. Long work returns an operation_id for wait_operation. This tool does not assemble or route the board. For PCB layout docs, read: ${SKILL_DOC_PATH}`,
             annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
             inputSchema: z.object({
                 file: z.string().min(1).describe('Path to a JavaScript PCB layout DSL code file.'),

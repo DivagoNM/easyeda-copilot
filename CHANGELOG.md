@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Block placement
+
+- Support backend block-only preview through `make_pcb_layout` with `solver({ previewBlock })`: return image paths, block coordinates and diagnostics without storing an assembly `layoutId`. Add `block.fixed` documentation and synchronized DSL declarations for precise whole-family positioning after ordinary local search. Both features work without `localLayout`; recommend a block preview when its quality is uncertain. The local backend dependency supplies the updated implementation.
+
 ### PCB intent validation
 
 - Add read-only `validate_pcb_dsl({ file })` to MCP and CLI, calling backend `validatePcbLayoutIntent` with the DSL file and the current schematic/PCB context read automatically from EasyEDA. Share input capture with `make_pcb_layout` and return English error/warning/info diagnostics without running placement.

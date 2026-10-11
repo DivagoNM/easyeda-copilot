@@ -35,6 +35,12 @@ type TargetRef =
 type PinTargetRef = Extract<TargetRef, { type: "pin" }>;
 
 interface BlockOptions {
+  /** Solve this root block and its satellites normally, then freeze every member on the board.
+   * reference must be a direct member; x/y are its final center in board mm, rotate its final angle.
+   * Independent of localLayout. No containing module, parent attachment or fixed/edge-mounted members.
+   * Final refinement (including refineGroup) cannot change this family. No layer flip.
+   */
+  fixed?: { reference: string; x: number; y: number; rotate: 0 | 90 | 180 | 270 };
   /** Main blocks are placed globally. Satellite blocks are compact physical islands attached near a parent block/component area. Split power converters and dense IC support into small satellites by function/side. */
   placement?: BlockPlacement;
   /** Parent block name for satellite placement. The satellite is nested into the parent's placement family; add anchor for attraction to a specific parent pin. */
@@ -583,6 +589,11 @@ interface CapClusterOptions {
 declare function capCluster(capacitors: string[], options: CapClusterOptions): void;
 
 interface SolverOptions {
+  /** Preview only this block and its satellites using the complete normal block search, with or without localLayout.
+   * Skips other footprints, board packing and global refinement. Returns an image/diagnostics, no PCB to apply.
+   * External relations are unassessed. Cannot combine with placeOnlyComponents or ignoreComponents.
+   */
+  previewBlock?: string;
   /** Placement grid in mm. Larger values are faster and cleaner; smaller values allow tighter placement. For complex boards, 1mm is a good starting point. */
   grid?: number;
   /** Signals ignored during placement ratsnest scoring, usually ["GND"]. They are also excluded from ordinary-net board attraction. */
