@@ -2,6 +2,8 @@
 
 Install the complete generated `skill/` directory as one skill named `easyeda-copilot`. Installing the skill does not install the EasyEDA extension or change an existing MCP configuration.
 
+If a usable skill is already generated or installed, reuse it. Prefer the skill for ordinary tasks even when direct MCP tools are connected. Building, copying, and dependency installation are needed only for initial setup or an update, not before each task.
+
 ## Requirements
 
 - Node.js >=20.19 on the machine running the agent.
@@ -13,7 +15,7 @@ The generated `build-info.json` declares `distribution`, `platform`, the MCP ver
 
 ## Build the generated skill
 
-Skill archives are not published in GitHub Releases. Build the skill from the repository so its runtime and documentation match the source revision you selected.
+Skip this section if you already have a usable build. Skill archives are not published in GitHub Releases. When creating a missing skill or updating it from changed source or to a new version, build it from the repository so its runtime and documentation match the source revision you selected.
 
 ### Lightweight build
 
@@ -41,7 +43,7 @@ Both modes replace only a previous generated `skill/` carrying the expected buil
 
 1. Inspect `skill/build-info.json`. For a bundled build, confirm its platform. For a lightweight build, stop if `installationBlockers` is nonempty.
 2. Copy the complete `skill/` to the agent's configured skills directory under the name `easyeda-copilot`; do not copy only `SKILL.md` or create an extra nested `skill/` level.
-3. For a lightweight build, run the following in the installed skill's `scripts/runtime/` directory:
+3. For a lightweight build whose dependencies are not yet installed, run the following once in the installed skill's `scripts/runtime/` directory:
 
    ```bash
    npm install --omit=dev

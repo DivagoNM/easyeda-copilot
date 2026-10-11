@@ -1,6 +1,8 @@
 # CLI and portable skill
 
-The CLI exposes the same tools and JSON Schemas as MCP. Existing MCP configurations are unchanged. Node.js >=20.19 and the EasyEDA Copilot extension are required; use the Node executable supplied by your agent if it is not on PATH.
+The CLI exposes the same tools and JSON Schemas as MCP. Prefer an available standalone CLI skill, including when direct MCP tools are also connected. Direct MCP tools remain supported when the skill is unavailable or the user requests MCP. Existing MCP configurations are unchanged. Node.js >=20.19 and the EasyEDA Copilot extension are required; use the Node executable supplied by your agent if it is not on PATH.
+
+For ordinary tasks, use the existing generated or installed skill and start its daemon as shown below. Building and dependency installation are setup or update steps, not steps to repeat for each task.
 
 ## Commands
 
@@ -30,7 +32,7 @@ Results are JSON on stdout. Single text/JSON results are unwrapped; append `--ra
 
 ## Build a skill
 
-From the repository root, after installing dependencies:
+Skip this section when a usable generated or installed skill already exists. Build only to create a missing skill or update it from changed source or to a new version. From the repository root, after installing dependencies:
 
 ```bash
 npm run build:skill
@@ -53,7 +55,7 @@ skill/                      Generated installable folder; never edit it directly
 
 The builder first compiles the current MCP, then derives the skill from its npm pack list and copies `mcp/docs/` directly into the skill root. The CLI and stdio entry point both use the same `createServer` factory, so tool registration and schemas cannot drift between them. `build-info.json` records the MCP version, distribution mode, installation blockers, and packaged dependencies. Temporary staging stays under `mcp/` and is cleaned after handled failures.
 
-The default `skill/` contains compiled MCP/CLI files, documentation, and a minimal runtime package.json, but **no node_modules**. The agent must run `npm install --omit=dev` in the installed `scripts/runtime/` before use. Direct dependency versions are pinned from the build environment; a registry-verified lockfile is not generated yet. Local file dependencies are recorded as installation blockers until maintainers publish them and switch source manifests to registry versions. No compiler should be required by the final published native packages.
+The default `skill/` contains compiled MCP/CLI files, documentation, and a minimal runtime package.json, but **no node_modules**. Run `npm install --omit=dev` in the installed `scripts/runtime/` once during setup, or after replacing the skill with a new lightweight build; reuse installed dependencies for subsequent tasks. Direct dependency versions are pinned from the build environment; a registry-verified lockfile is not generated yet. Local file dependencies are recorded as installation blockers until maintainers publish them and switch source manifests to registry versions. No compiler should be required by the final published native packages.
 
 To repackage an already-built MCP use `npm run pack:skill --workspace=easyeda-copilot-mcp`. The generated folder is ignored by Git to avoid maintaining a second copy of MCP code and documentation. Rebuild it after changing MCP runtime code, docs, the launcher, or the installation guide.
 

@@ -1,11 +1,13 @@
 ---
 name: easyeda-copilot
-description: Create, modify, place, route, or review EasyEDA schematics and PCBs with EasyEDA Copilot, using direct MCP tools when available or the generated standalone CLI skill.
+description: Create, modify, place, route, or review EasyEDA schematics and PCBs with EasyEDA Copilot. Prefer the standalone CLI skill when available; direct MCP tools are also supported.
 ---
 
 # EasyEDA Copilot
 
-Use the direct MCP tools when they are available. A generated standalone skill contains `build-info.json` and `scripts/easyeda-copilot-cli.js`; in that mode read [the CLI guide](cli.md), resolve the launcher's absolute path, and run it with Node.js >=20.19. Before first use, read `build-info.json`: an `npm` distribution requires `npm install --omit=dev` in `scripts/runtime/`, while a matching-platform `bundled` distribution does not. Stop if `installationBlockers` is nonempty.
+Use the standalone CLI skill when it is available, even if direct MCP tools are also connected. Use direct MCP tools when the skill is unavailable or the user explicitly requests MCP. Both expose the same tools and JSON Schemas.
+
+Reuse an existing generated or installed skill; do not rebuild it for each task. It contains `build-info.json` and `scripts/easyeda-copilot-cli.js`. Read [the CLI guide](cli.md), resolve the existing launcher's absolute path, and run it with Node.js >=20.19. Before first use, read `build-info.json`: an `npm` distribution requires `npm install --omit=dev` in `scripts/runtime/` only if its dependencies have not been installed, while a matching-platform `bundled` distribution needs no dependency installation. Stop if `installationBlockers` is nonempty. Build only when no usable skill exists or when updating it from changed source or to a new version; see [installation and updates](install-guide.md).
 
 In CLI mode, run `node <absolute-launcher-path> start` once, retain the returned four-character daemon ID, and translate each tool invocation below to `<launcher> <id> call <tool>`. Omitted arguments are `{}`; use `<id> tools help <tool>` for the current JSON Schema rather than inferring arguments. Keep the same ID for a task and its long operations, then stop it when finished.
 
