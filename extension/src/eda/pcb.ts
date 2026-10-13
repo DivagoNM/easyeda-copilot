@@ -12,6 +12,7 @@ import { checkPcbNetDrc } from "./drc";
 import { PcbLayerName } from "@copilot/shared/types/pcb/shared";
 import { milToMm, mmToMil, round, safeString, VERSION_EDASYEDA } from "./utils";
 import { easyEdaPointToPlacement, easyEdaRotationToPlacement } from "./pcb-existing-placement";
+import { previewRotationRadians } from "./pcb-preview-rotation";
 
 const MIL_TO_MM = 25.4 / 1000;
 const SNAP_TOLERANCE_MIL = mmToMil(0.05);
@@ -726,12 +727,12 @@ export async function getPcbRaw(): Promise<RawPcb> {
                 else if (Array.isArray(v)) return rawSourcesFromComplex(v, milToMm);
                 return v;
             }),
-            rotation: p.getState_Rotation(),
+            rotation: previewRotationRadians(p.getState_Rotation(), VERSION_EDASYEDA),
             hole: p.getState_Hole() ? {
                 data: p.getState_Hole()!.map(v => typeof v === 'number' ? milToMm(v) : v),
                 offsetX: toMmCopperGrid(p.getState_HoleOffsetX()),
                 offsetY: toMmCopperGrid(p.getState_HoleOffsetY()),
-                rotation: p.getState_HoleRotation(),
+                rotation: previewRotationRadians(p.getState_HoleRotation(), VERSION_EDASYEDA),
             } : undefined
         });
     }
