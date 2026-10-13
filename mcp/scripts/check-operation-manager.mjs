@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const { OperationManager } = await import(
     pathToFileURL(resolve('dist/operations/manager.js')).href
 );
-const { compactRoutingDiagnostics, routingResultBlocksApplication } = await import(
+const { formatRoutingReport, routingResultBlocksApplication } = await import(
     pathToFileURL(resolve('dist/routing/routing-operation.js')).href
 );
 
@@ -14,19 +14,12 @@ assert.equal(routingResultBlocksApplication({ status: 'partial' }), false,
     'partial copper must reach the EasyEDA apply transaction');
 assert.equal(routingResultBlocksApplication({ status: 'error' }), true);
 
-const compactDiagnostics = compactRoutingDiagnostics([
-    { code: 'INFO', severity: 'info', message: 'omit me', details: { large: true } },
-    ...Array.from({ length: 25 }, (_, index) => ({
-        code: `WARN_${index}`,
-        severity: 'warning',
-        message: `warning ${index}`,
-        path: `nets.${index}`,
-        details: { large: true },
-    })),
-]);
-assert.equal(compactDiagnostics.diagnostics.length, 20);
-assert.equal(compactDiagnostics.omitted, 5);
-assert.deepEqual(Object.keys(compactDiagnostics.diagnostics[0]), ['code', 'message', 'path']);
+const digest = formatRoutingReport({status:'partial',metrics:{elapsedMs:25,openNetCount:1}},
+    Array.from({length:35},(_,i)=>({code:`WARN_${i}`,severity:'warning',message:'inspect full report'})),{applied:true});
+assert.equal(digest.split('\n').filter(line=>line.startsWith('- ')).length,30);
+assert.match(digest,/5 more problem groups/);
+assert.match(digest,/applied: true/);
+assert.match(digest,/Open nets: 1/);
 
 const manager = new OperationManager();
 const completedId = manager.start('pcb-dsl', async ({ id }) => ({ ok: true, operation_id: id }));

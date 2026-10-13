@@ -887,17 +887,20 @@ export function routingRulesToEasyEdaDrcBundle(
         copyFields(assignmentRule, occurrences);
     }
 
-    for (const [index, group] of (rules.matchedGroups ?? []).entries()) {
+    // Native equal-length groups cannot express selected paths or delay constraints.
+    const nativeGroups = (rules.matchedGroups ?? []).filter(group =>
+        group.toleranceMm !== undefined && !group.delay && !group.endpoints?.length);
+    for (const [index, group] of nativeGroups.entries()) {
         const groupRule = ensureEqualLengthGroup(netRules, group.id, group.nets);
         if (!changes.matchedGroups.has(group.id)) continue;
         const name = `copilot_router_match_${index}`;
         const tolerance = createPreset(ruleConfiguration, 'Physics', 'Net Length Tolerance', name, preset => {
-            replaceNamedValues(preset, { netLengthTolerance: group.toleranceMm });
+            replaceNamedValues(preset, { netLengthTolerance: group.toleranceMm! });
         });
         groupRule['Net Length Tolerance'] = tolerance.name;
         for (const member of groupRule.sub) member['Net Length Tolerance'] = tolerance.name;
     }
-    const targetGroupNames = new Set((rules.matchedGroups ?? []).map(item => item.id));
+    const targetGroupNames = new Set(nativeGroups.map(item => item.id));
     netRules = netRules.filter(rule => rule.type !== 'equalLengthGroup' || targetGroupNames.has(rule.name));
 
     // Native EasyEDA stores class/group members below their relation nodes instead
@@ -905,7 +908,7 @@ export function routingRulesToEasyEdaDrcBundle(
     // supplementary and therefore do not affect this primary placement.
     const groupedNets = new Set([
         ...(rules.netClasses ?? []).flatMap(item => item.nets),
-        ...(rules.matchedGroups ?? []).flatMap(item => item.nets),
+        ...nativeGroups.flatMap(item => item.nets),
     ]);
     const primaryNames = new Set(netRules.filter(rule => rule.type === 'net').map(rule => rule.name));
     for (const assignment of rules.nets) if (!groupedNets.has(assignment.net) && !primaryNames.has(assignment.net)) {

@@ -689,6 +689,9 @@ function toEasyEdaPoint(pointValue: PointMm) {
 
 export function routingResultToEasyEdaApplication(result: RoutingResult): EasyEdaRoutingApplication {
     const diagnostics: RoutingDiagnostic[] = [];
+    for (const group of result.rules.matchedGroups ?? []) if (group.delay || group.endpoints?.length)
+        diagnostics.push({ code: 'EASYEDA_MATCHING_REQUIREMENT_DSL_ONLY', severity: 'warning',
+            message: `${group.id}: delay/selected-path requirements were evaluated by the router but cannot be persisted as native whole-net length rules; retain the DSL.` });
     let copperLayerCount: number | undefined;
     if (result.stackup?.applyRequested) {
         const requested = result.stackup.effective.layers.filter(layer => layer.kind === 'copper').length;
@@ -758,10 +761,8 @@ export function routingResultToEasyEdaApplication(result: RoutingResult): EasyEd
             return [];
         }
         if (zone.outline.holes?.length) {
-            diagnostics.push({
-                code: 'EASYEDA_RESULT_ZONE_HOLES_UNSUPPORTED', severity: 'error',
-                message: `Zone ${zone.id ?? index} contains holes that the EasyEDA host adapter cannot preserve.`,
-            });
+            diagnostics.push({ code: 'EASYEDA_RESULT_ZONE_HOLES_UNSUPPORTED', severity: 'error',
+                message: `Zone ${zone.id ?? index}: router output must contain simple contours without holes.` });
             return [];
         }
         const layers = zone.layers.map(layerId).filter((item): item is number => item !== undefined);
@@ -772,13 +773,13 @@ export function routingResultToEasyEdaApplication(result: RoutingResult): EasyEd
             });
             return [];
         }
-        if (zone.fill?.style === 'hatched') {
+        if (zone.fill?.style === 'hatched' && (zone.fill.hatchThicknessMm !== undefined || zone.fill.hatchGapMm !== undefined || ![0, 45, 90].includes(zone.fill.hatchOrientationDeg ?? 45))) {
             diagnostics.push({
                 code: 'EASYEDA_RESULT_ZONE_HATCH_APPROXIMATED', severity: 'warning',
                 message: `Zone ${zone.id ?? index} hatch settings cannot be expressed exactly by the EasyEDA extension API; the nearest native 45/90-degree grid preset will be used.`,
             });
         }
-        if (zone.removeIslandsBelowMm2 !== undefined && zone.removeIslandsBelowMm2 > 0) {
+        if (zone.removeIslandsBelowMm2 !== undefined && zone.removeIslandsBelowMm2 > 0 && zone.removeIslandsBelowMm2 !== Number.MAX_VALUE) {
             diagnostics.push({
                 code: 'EASYEDA_RESULT_ZONE_ISLAND_THRESHOLD_APPROXIMATED', severity: 'warning',
                 message: `Zone ${zone.id ?? index} island area threshold cannot be expressed by the EasyEDA extension API; all isolated islands will be removed.`,
