@@ -11,10 +11,6 @@ const MIN_COPPER_WIDTH_MM = 0.01;
 const SAME_POINT_EPS = 1e-9;
 const PCB_CLEAR_TIMEOUT_MS = 5000;
 const COPILOT_PAD_PREFIX = "copilot_";
-const VIA_SOLDER_MASK_EXPANSION: IPCB_PrimitiveSolderMaskAndPasteMaskExpansion = {
-    topSolderMask: 0,
-    bottomSolderMask: 0,
-};
 
 type BoardPoint = {
     x: number;
@@ -582,7 +578,7 @@ async function drawVias(vias: BoardAssemble["vias"], signal?: AbortSignal) {
                         diameter,
                         EPCB_PrimitiveViaType.VIA,
                         null,
-                        VIA_SOLDER_MASK_EXPANSION,
+                        null, // Inherit solder mask expansion from the board rules.
                         false,
                     ),
                     "create returned undefined",
@@ -851,7 +847,7 @@ async function drawRoutingVias(vias: RoutingCopperApplication['vias']) {
                 diameter,
                 EPCB_PrimitiveViaType.VIA,
                 null,
-                VIA_SOLDER_MASK_EXPANSION,
+                null, // Inherit solder mask expansion from the board rules.
                 false,
             );
             if (!primitive) throw new Error(`Failed to create routed via ${label}`);
