@@ -9,6 +9,7 @@
 - Normalize pad and hole rotations for PCB previews on EasyEDA versions newer than 3.2.149 while preserving the earlier radians convention.
 - Lower the PCB preview cutout density threshold from 25% to 5% so valid copper clearance contours remain visible.
 - Inherit board solder mask rules when creating placement and routing vias.
+- Bound source schematic port creation and component commit waits to 20 seconds. Warn and retain named wires when a net symbol cannot be created, instead of aborting assembly.
 
 ### Dependencies
 

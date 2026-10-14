@@ -202,9 +202,9 @@ async function createNativeNetPort(
     const directions: Array<'IN' | 'OUT' | 'BI'> = requested === 'BI' ? ['BI'] : [requested, 'BI'];
     for (const direction of directions) {
         try {
-            const primitive = await eda.sch_PrimitiveComponent.createNetPort(
+            const primitive = await withTimeout(eda.sch_PrimitiveComponent.createNetPort(
                 direction, getSpecialSignalName(component), to2(plan.apiX), to2(plan.apiY), rotation, mirror,
-            );
+            ), 20_000, `Timed out creating ${direction} port ${component.designator}`);
             if (primitive) return primitive;
         } catch (error) {
             eda.sys_Log.add(`[source-assemble] Native ${direction} port failed for ${component.designator}: ${String(error)}`, ESYS_LogType.WARNING);
@@ -225,9 +225,9 @@ async function createSeedComponent(plan: PlannedComponent): Promise<PrimitiveCom
     let primitive: PrimitiveComponent | undefined;
 
     if (netFlagKind) {
-        primitive = await eda.sch_PrimitiveComponent.createNetFlag(
+        primitive = await withTimeout(eda.sch_PrimitiveComponent.createNetFlag(
             netFlagKind, getSpecialSignalName(component), to2(plan.apiX), to2(plan.apiY), rotation, mirror,
-        );
+        ), 20_000, `Timed out creating net flag ${component.designator}`);
     } else if (usesNativeNetPort(component)) {
         primitive = await createNativeNetPort(component, plan, getNetPortStyle(component) ?? 'bi', rotation, mirror);
     } else if (component.value === 'unknown_shortsym') {
@@ -240,10 +240,10 @@ async function createSeedComponent(plan: PlannedComponent): Promise<PrimitiveCom
     } else if (component.designator.includes('|') && isNetPortUuid(rawPartUuid)) {
         const style = getNetPortStyle(component) ?? 'bi';
         try {
-            primitive = await eda.sch_PrimitiveComponent.create(
+            primitive = await withTimeout(eda.sch_PrimitiveComponent.create(
                 STYLED_NET_PORT_COMPONENTS[style],
                 to2(plan.apiX), to2(plan.apiY), undefined, rotation, mirror,
-            );
+            ), 20_000, `Timed out creating library port ${component.designator}`);
         } catch (error) {
             eda.sys_Log.add(`[source-assemble] Library port failed for ${component.designator}: ${String(error)}`, ESYS_LogType.WARNING);
         }
@@ -276,7 +276,7 @@ async function createSeedComponent(plan: PlannedComponent): Promise<PrimitiveCom
         }
     }
 
-    const committed = await primitive.done();
+    const committed = await withTimeout(primitive.done(), 20_000, `Timed out committing component ${component.designator}`);
     return (committed || primitive) as PrimitiveComponent;
 }
 
@@ -387,6 +387,15 @@ async function placeSeeds(
     }));
 
     for (const failed of batchResults.filter(result => result.error)) {
+        if (isNamedNetSymbol(failed.seed.input)) {
+            eda.sys_Log.add(
+                `[source-assemble] Net symbol template unavailable for ${failed.seed.input.designator}; ` +
+                `keeping named wires: ${String(failed.error)}`,
+                ESYS_LogType.WARNING,
+            );
+            groups.delete(failed.key);
+            continue;
+        }
         let lastError = failed.error;
         eda.sys_Log.add(
             `[source-assemble] Parallel seed failed for ${failed.seed.input.designator}; retrying serially: ` +
@@ -603,6 +612,7 @@ function cloneComponentsIntoSource(
 
 async function loadPins(plans: PlannedComponent[]): Promise<void> {
     const load = async (plan: PlannedComponent) => {
+        if (!plan.primitiveId && isNamedNetSymbol(plan.input)) return;
         if (!plan.primitiveId) throw new Error(`Primitive id missing for ${plan.input.designator}`);
 
         let pins: ISCH_PrimitiveComponentPin[] | undefined;
@@ -1072,7 +1082,7 @@ function getUnusedPinNets(circuit: CircuitAssembly, plans: PlannedComponent[]) {
         if (pin) usedCoordinates.add(coordinateKey(pin.getState_X(), pin.getState_Y()));
     }
 
-    return plans.flatMap(plan => plan.input.pins
+    return plans.filter(plan => plan.primitiveId || !isNamedNetSymbol(plan.input)).flatMap(plan => plan.input.pins
         .filter(pin => pin.signal_name && pin.signal_name.toLowerCase().trim() !== 'nc')
         .filter(pin => !usedPins.has(`${plan.input.designator}_pin_${pin.pin_number}`))
         .filter(pin => {
@@ -1608,7 +1618,7 @@ async function bulkAddNetAttachments(
 
     return {
         wireSpecs: portWires,
-        portCount: portPlans.length,
+        portCount: portPlans.filter(plan => groups.has(plan.templateKey)).length,
         unresolved,
         unresolvedSamples,
         apiSeeds: seededKeys.size,

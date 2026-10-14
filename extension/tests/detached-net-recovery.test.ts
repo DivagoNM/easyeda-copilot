@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { withTimeout } from '../src/timeout';
 
 // Exercise the real recovery function without loading the editor-dependent imports.
 const file = resolve(__dirname, '../src/eda/assemble-source.ts');
@@ -115,7 +116,7 @@ test('missing library BI port falls back to the native BI port at its contact ro
                 STYLED_NET_PORT_COMPONENTS: { bi: { uuid: 'new-bi', libraryUuid: 'lib' } },
             };
             if (name === '@copilot/shared/types/lcsc') return { getPartUuid: (value: string) => value };
-            if (name === './utils') return { to2: (value: number) => value };
+            if (name === './utils') return { to2: (value: number) => value, withTimeout };
             return {};
         },
     });
@@ -143,7 +144,7 @@ test('unsupported native direction falls back to BI without failing the placemen
         },
         require(name: string) {
             if (name === './assembly-symbols') return { getSpecialSignalName: () => 'DATA' };
-            if (name === './utils') return { to2: (value: number) => value };
+            if (name === './utils') return { to2: (value: number) => value, withTimeout };
             return {};
         },
     });
