@@ -1,10 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 - Unreleased
+
+### Compatibility and fixes
+
+- Restore missing runtime APIs in the JLCEDA background sandbox before dependencies initialize, including abort handling, UUID generation and timers. Return MCP errors when command dispatch fails instead of leaving requests waiting for a timeout.
+- Remove unused checkpoint secondary indexes, including the full document-content index, to prevent excessive IndexedDB/LevelDB growth.
+- Normalize pad and hole rotations for PCB previews on EasyEDA versions newer than 3.2.149 while preserving the earlier radians convention.
+- Inherit board solder mask rules when creating placement and routing vias.
+
+### Dependencies
+
+- Target `eda-copilot-backend` 0.4.0 for edition-aware component resolution and the updated placement tools. Retain the published `eda-copilot-router` 0.3.2 with its compatible Hybrid/KRT integration, routing DSL and documentation.
 
 ### Block placement
 
-- Support backend block-only preview through `make_pcb_layout` with `solver({ previewBlock })`: return image paths, block coordinates and diagnostics without storing an assembly `layoutId`. Add `block.fixed` documentation and synchronized DSL declarations for precise whole-family positioning after ordinary local search. Both features work without `localLayout`; recommend a block preview when its quality is uncertain. The local backend dependency supplies the updated implementation.
+- Support backend block-only preview through `make_pcb_layout` with `solver({ previewBlock })`: return image paths, block coordinates and diagnostics without storing an assembly `layoutId`. Add `block.fixed` documentation and synchronized DSL declarations for precise whole-family positioning after ordinary local search. Both features work without `localLayout`; recommend a block preview when its quality is uncertain. Backend 0.4.0 supplies the updated implementation.
 
 ### PCB intent validation
 

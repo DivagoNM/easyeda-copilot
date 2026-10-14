@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Recover a release from its original tested artifacts (e.g. v1.3.0)'
+        description: 'Recover a release from its original tested artifacts (e.g. v1.3.1)'
         type: string
       artifact_run_id:
         description: 'Original tag Build run ID; all eight integration jobs must have passed'

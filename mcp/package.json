@@ -1,8 +1,8 @@
 {
   "name": "easyeda-copilot-mcp",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "mcpName": "io.github.biosshot/easyeda-copilot",
-  "description": "MCP server for EasyEDA Copilot",
+  "description": "MCP server, CLI, and SDK for EasyEDA Pro design automation, with schematic and PCB tools and SPICE simulation helpers.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -56,7 +56,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "eda-copilot-backend": "file:../../eda-copilot-backend",
+    "eda-copilot-backend": "0.4.0",
     "eda-copilot-router": "0.3.2",
     "find-up": "^5.0.0",
     "sharp": "^0.35.0",

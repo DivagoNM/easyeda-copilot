@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.biosshot/easyeda-copilot",
   "title": "EasyEDA Copilot",
-  "description": "Connect MCP clients to EasyEDA Desktop for schematic and PCB design, routing, inspection, and DRC.",
+  "description": "AI tools for EasyEDA Pro schematics, PCB placement and routing, SPICE simulation, and DRC.",
   "repository": {
     "url": "https://github.com/biosshot/easyeda-copilot",
     "source": "github"
   },
-  "version": "1.3.0",
+  "version": "1.3.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "easyeda-copilot-mcp",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "transport": {
         "type": "stdio"
       }

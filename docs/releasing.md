@@ -1,5 +1,21 @@
 # Release publication and recovery
 
+## Prepare 1.3.1
+
+The release targets `eda-copilot-backend` 0.4.0 and the published
+`eda-copilot-router` 0.3.2. Copilot, extension and MCP Registry manifests use
+1.3.1. Keep the backend local until 0.4.0 is available from npm; the router
+already uses its registry version.
+
+After backend publication, run `npm run deps:release` to pin both registry
+dependencies and regenerate the lockfile, then run `npm run check:release`.
+Run the integration checks against those final dependencies before tagging.
+Replace `Unreleased` in the 1.3.1 changelog heading with the actual release
+date. Creating or pushing a `v*` tag starts publication, so do that only when
+publication is authorized.
+
+## Publication
+
 A `v*` tag runs the eight OS/Node integration jobs. The Linux Node 24 job
 produces the npm and extension archives; publication uses those exact files.
 Release versions, npm archive SHA-512 and the MCP manifest are checked before
