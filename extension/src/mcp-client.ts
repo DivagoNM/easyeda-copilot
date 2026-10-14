@@ -1530,7 +1530,6 @@ async function handleMessage(message: McpMessage, connectionEpoch: number, signa
                             boardApplied: Boolean(copper),
                             ...(copper?.zoneRebuild ? { pours: copper.zoneRebuild } : {}),
                             nativeVerification: hasViolations ? 'failed' : 'passed',
-                            nativeDrc: drc,
                         };
                     } catch (error) {
                         if (signal?.aborted) throw error;

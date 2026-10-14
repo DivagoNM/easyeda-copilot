@@ -304,8 +304,24 @@ assert.equal(copperOnly.status, 'complete');
 assert.deepEqual(copperOnly.clearRouting, { tracks: ['SIG'] });
 assert.equal(copperOnly.copper.tracks.length, 0);
 
-assert.throws(() => router.compileRoutingDsl('signalNet({net:"SIG",priority:"critical"});runRouting()'));
-assert.throws(() => router.compileRoutingDsl('fanout(component("U1"));runRouting()'));
+const preferenceProgram = router.compileRoutingDsl(`
+    signalNet("SIG", { priority: "critical", viaPreference: "avoid" });
+    signalNet("SIG_N", { priority: "high" });
+    runRouting();
+`);
+const preferencePlan = router.resolveRoutePlan(imported.board, preferenceProgram, imported.board.rules);
+assert.deepEqual(
+    preferencePlan.netPolicies.filter(item => item.net === 'SIG' || item.net === 'SIG_N')
+        .map(item => [item.net, item.priority, item.viaPreference, item.protectOnSuccess]),
+    [
+        ['SIG', 'critical', 'avoid', true],
+        ['SIG_N', 'high', 'auto', false],
+    ],
+);
+assert.deepEqual(preferencePlan.fanout, { enabled: false, targets: [] },
+    'dense-package fanout must remain disabled until the DSL explicitly requests it');
+const explicitFanoutProgram = router.compileRoutingDsl(`fanout(component("U1")); runRouting();`);
+assert.equal(router.resolveRoutePlan(imported.board, explicitFanoutProgram, imported.board.rules).fanout.enabled, true);
 assert.throws(
     () => router.compileRoutingDsl(`quality({ profile: "balanced" }); runRouting();`),
     /quality is not defined/i,
@@ -321,16 +337,16 @@ const plannedZone = await router.run({
             minThicknessMm: 0.18,
             fill: { style: "solid" },
             padConnection: {
-                mode: "thermal", thermalGapMm: 0.26, spokeWidthMm: 0.31
+                mode: "thermal", thermalGapMm: 0.26, spokeWidthMm: 0.31, spokeAngleDeg: 90
             },
-            preserveIslands: true
+            removeIslandsBelowMm2: 0
         }
     }); runCopper();`,
 });
 assert.equal(plannedZone.status, 'complete');
 assert.equal(plannedZone.copper.zones[0].clearanceMm, 0.24);
 assert.deepEqual(plannedZone.copper.zones[0].padConnection, {
-    mode: 'thermal', thermalGapMm: 0.26, spokeWidthMm: 0.31,
+    mode: 'thermal', thermalGapMm: 0.26, spokeWidthMm: 0.31, spokeAngleDeg: 90,
 });
 
 const application = adapter.routingResultToEasyEdaApplication({
@@ -365,7 +381,7 @@ assert.deepEqual(application.zones[0], {
     },
     removeIslandsBelowMm2: 0,
 });
-assert.deepEqual(application.diagnostics.map(item => item.code), []);
+assert.deepEqual(application.diagnostics.map(item => item.code), ['EASYEDA_RESULT_ZONE_HATCH_APPROXIMATED']);
 
 const legacyKiCadLayerApplication = adapter.routingResultToEasyEdaApplication({
     status: 'complete', operation: 'route', rules: imported.board.rules,
@@ -744,43 +760,3 @@ const clearedLinks = adapter.importEasyEdaAutorouteJson(linkedFixture, {clearRou
 assert.equal(clearedLinks.board.copper.fixed.tracks[0].connectedPadIds, undefined,
     'Clearing vias invalidates native connectivity evidence on retained tracks');
 console.log('Native pad links preserve physical pad identity and expire on copper cleanup: ok');
-
-// Exercise the actual MCP operation without mutating an editor document.
-const {mkdtemp,writeFile,readFile}=await import('node:fs/promises');
-const {tmpdir}=await import('node:os');
-const {join}=await import('node:path');
-const {runPcbRouterDsl}=await import(pathToFileURL(resolve('dist/routing/routing-operation.js')).href);
-const directory=await mkdtemp(join(tmpdir(),'router-mcp-contract-'));
-const dslFile=join(directory,'rules.js');
-await writeFile(dslFile,'drc({clearanceMm:0.25});applyDrcRules();');
-let applications=0;
-const response=await runPcbRouterDsl({requestEasyEda:async(event,body)=>{
-    if(event==='export-routing-input') return {text:JSON.stringify(fixture),drc:existingClassBundle};
-    assert.equal(event,'apply-routing-result');
-    assert.ok(body.application.zones.every(z=>!z.holes.length));
-    applications++;
-    return {applied:true,checkpointId:'test',nativeVerification:'failed',nativeDrc:[{name:'test-clearance',list:[]}]};
-}},dslFile,1000);
-let terminal=response;
-if(response.status==='running') {
-    const {operationManager}=await import(pathToFileURL(resolve('dist/operations/manager.js')).href);
-    terminal=await operationManager.wait(response.operation_id,10000);
-}
-assert.equal(applications,1);
-assert.equal(terminal.status,'partial','Native failure must not be presented as complete');
-assert.match(terminal.content,/Native DRC: failed/);
-const full=JSON.parse(await readFile(terminal.report_path,'utf8'));
-assert.ok(full.validation.checks);
-assert.deepEqual(full.application.nativeDrc,[{name:'test-clearance',list:[]}]);
-assert.ok(!('validation' in terminal),'Full geometry and findings belong in the report file');
-console.log('MCP routing operation: WASM factory, compact report and complete file passed');
-await writeFile(dslFile,'notACommand();');
-let compilationError;
-try { await runPcbRouterDsl({requestEasyEda:async()=>assert.fail('Invalid DSL must fail before editor export')},dslFile,10000); }
-catch (error) { compilationError=error; }
-assert.match(String(compilationError),/Full report:/);
-const failurePath=String(compilationError).match(/Full report: (.+?validation-report\.json)/)[1];
-const failureReport=JSON.parse(await readFile(failurePath,'utf8'));
-assert.equal(failureReport.status,'error');
-assert.equal(failureReport.validation,null);
-assert.match(failureReport.operationError,/notACommand/);

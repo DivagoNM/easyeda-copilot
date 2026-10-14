@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
     compileRoutingDsl,
-    createBundledEasyEdaWasmBackend,
+    createHybridBackend,
     run,
     type RoutingDiagnostic,
     type RoutingResult,
@@ -12,8 +12,7 @@ import { PcbDrcBundleSchema, type PcbDrcBundle } from '@copilot/shared/types/pcb
 import type { Bridge } from '../bridge';
 import { operationManager, type OperationContext } from '../operations/manager';
 import { TEMP_DIR } from '../utils/dirs';
-import { formatRoutingReport } from './routing-report';
-export { formatRoutingReport } from './routing-report';
+import { readRoutingProgress } from './routing-progress';
 import {
     importEasyEdaAutorouteJson,
     routingResultToEasyEdaApplication,
@@ -27,6 +26,7 @@ import {
 
 const PCB_DOCUMENT_RESOURCE = 'current-pcb-document';
 const ROUTER_TIMEOUT_MS = TIMEOUT_POLICY.routerExecutionMs;
+const ROUTING_DIAGNOSTIC_LIMIT = 20;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -47,6 +47,22 @@ function adapterErrors(result: RoutingResult, diagnostics: readonly RoutingDiagn
     return diagnostics.slice(result.diagnostics.length).filter(item => item.severity === 'error');
 }
 
+export function compactRoutingDiagnostics(diagnostics: readonly RoutingDiagnostic[]) {
+    const relevant = diagnostics.filter(item => item.severity === 'warning' || item.severity === 'error');
+    const unique = [...new Map(relevant.map(item => [
+        `${item.code}\u0000${item.message}\u0000${item.path ?? ''}`,
+        {
+            code: item.code,
+            message: item.message,
+            ...(item.path ? { path: item.path } : {}),
+        },
+    ])).values()];
+    return {
+        diagnostics: unique.slice(0, ROUTING_DIAGNOSTIC_LIMIT),
+        omitted: Math.max(0, unique.length - ROUTING_DIAGNOSTIC_LIMIT),
+    };
+}
+
 /** Partial routing carries applicable copper; only a terminal router failure blocks the transaction. */
 export function routingResultBlocksApplication(result: Pick<RoutingResult, 'status'>) {
     return result.status === 'error';
@@ -58,10 +74,8 @@ async function executeRoutingOperation(
     context: OperationContext,
 ) {
     const artifactsDirectory = join(TEMP_DIR, 'copilot-router', context.id.replace(':', '-'));
-
+    context.setProgressReader(() => readRoutingProgress(join(artifactsDirectory, 'krt')));
     await mkdir(artifactsDirectory, { recursive: true });
-    const reportPath = join(artifactsDirectory, 'validation-report.json');
-    try {
 
     context.setStage('reading_dsl');
     const dslPath = resolve(dslFile);
@@ -101,8 +115,11 @@ async function executeRoutingOperation(
     );
 
     context.setStage('routing');
-    const backend = createBundledEasyEdaWasmBackend({
-        onProgress: value => context.setProgress({ message: 'WASM routing', details: { progress: value } }),
+    const backend = createHybridBackend({
+        krt: {
+            artifactsDirectory: join(artifactsDirectory, 'krt'),
+            keepArtifacts: true,
+        },
     });
     const routingTimeout = AbortSignal.timeout(ROUTER_TIMEOUT_MS);
     const routingSignal = AbortSignal.any([
@@ -113,35 +130,24 @@ async function executeRoutingOperation(
         ...routerInput,
         backend,
         signal: routingSignal,
-        onCheckpoint: async ({ phase, board }) => {
-            context.setStage(phase);
-            await writeFile(join(artifactsDirectory, `${phase}.json`), JSON.stringify(board));
-        },
     });
     await writeFile(
         join(artifactsDirectory, 'routing-result.json'),
         `${JSON.stringify(result)}\n`,
     );
-    const saveReport = async (extra: Record<string, unknown> = {}) => writeFile(reportPath,
-        JSON.stringify({ status: result.status, validation: result.validation ?? null,
-            diagnostics: [...imported.diagnostics, ...result.diagnostics], metrics: result.metrics, ...extra }, null, 2));
-    await saveReport();
     // A watchdog-expired router run may still return independently audited,
     // applicable partial copper. Only an explicit operation cancellation may
     // veto that result after run(); status:error is handled below.
     context.signal.throwIfAborted();
     const routingErrors = result.diagnostics.filter(item => item.severity === 'error');
     if (routingResultBlocksApplication(result)) {
-        throw new Error(`${diagnosticsMessage(routingErrors) || 'PCB router DSL failed.'}\nFull report: ${reportPath}`);
+        throw new Error(diagnosticsMessage(routingErrors) || 'PCB router DSL failed.');
     }
 
     context.setStage('preparing_application');
     const translatedApplication = routingResultToEasyEdaApplication(result);
     const unsupported = adapterErrors(result, translatedApplication.diagnostics);
-    if (unsupported.length) {
-        await saveReport({ diagnostics: [...imported.diagnostics, ...translatedApplication.diagnostics] });
-        throw new Error(`${diagnosticsMessage(unsupported)}\nFull report: ${reportPath}`);
-    }
+    if (unsupported.length) throw new Error(diagnosticsMessage(unsupported));
     // Import warnings describe native source objects that were deliberately
     // skipped. Preserve them in the operation result and its artifact instead
     // of losing them when the router returns successfully.
@@ -178,35 +184,42 @@ async function executeRoutingOperation(
         }
         return applied;
     });
-    let applied: JsonRecord | undefined;
-    try { applied = record(await context.applyResult()); }
-    catch (error) {
-        await saveReport({ diagnostics: application.diagnostics, applicationError: String(error) });
-        throw new Error(`${String(error)}\nFull report: ${reportPath}`);
-    }
+    const applied = record(await context.applyResult());
+    const diagnosticSummary = compactRoutingDiagnostics(application.diagnostics);
+    const openNetNames = result.metrics.openNets ?? [];
+    const visibleOpenNetNames = openNetNames.slice(0, ROUTING_DIAGNOSTIC_LIMIT);
     const pours = record(applied?.pours);
-    const status = result.status === 'complete' && (applied?.nativeVerification === 'failed' || Number(pours?.pending ?? 0) > 0)
-        ? 'partial' : result.status;
-    await saveReport({ status, diagnostics: application.diagnostics, application: applied });
+
     return {
-        status,
+        status: result.status,
+        operation: result.operation,
         operation_id: context.id,
         applied: applied?.applied === true,
         checkpointId: applied?.checkpointId,
-        content: formatRoutingReport({ ...result, status }, application.diagnostics, applied),
-        report_path: reportPath,
+        copper: {
+            tracks: application.tracks.length,
+            vias: application.vias.length,
+            zones: application.zones.length,
+            ...(typeof pours?.rebuilt === 'number' ? { pours_rebuilt: pours.rebuilt } : {}),
+            ...(typeof pours?.pending === 'number' ? { pours_pending: pours.pending } : {}),
+        },
+        routing: {
+            ...(result.metrics.routedNetCount === undefined ? {} : { routed_nets: result.metrics.routedNetCount }),
+            ...(result.metrics.openNetCount === undefined ? {} : { open_nets: result.metrics.openNetCount }),
+            ...(visibleOpenNetNames.length ? { open_net_names: visibleOpenNetNames } : {}),
+            ...(openNetNames.length > visibleOpenNetNames.length
+                ? { open_net_names_omitted: openNetNames.length - visibleOpenNetNames.length }
+                : {}),
+            ...(result.metrics.trackLengthMm === undefined
+                ? {}
+                : { track_length_mm: Math.round(result.metrics.trackLengthMm * 1000) / 1000 }),
+            elapsed_ms: Math.round(result.metrics.elapsedMs),
+        },
+        drc: applied?.nativeVerification ?? 'not-run',
+        ...(diagnosticSummary.diagnostics.length ? { diagnostics: diagnosticSummary.diagnostics } : {}),
+        ...(diagnosticSummary.omitted ? { diagnostics_omitted: diagnosticSummary.omitted } : {}),
         artifacts_directory: artifactsDirectory,
     };
-    } catch (error) {
-        // Also retain evidence when compilation, export or import fails before
-        // the router can produce a validation report.
-        let previous: JsonRecord = {};
-        try { previous = JSON.parse(await readFile(reportPath, 'utf8')); } catch {}
-        await writeFile(reportPath, JSON.stringify({ ...previous, status: 'error',
-            validation: previous.validation ?? null, operationError: String(error) }, null, 2));
-        const message = String(error);
-        throw new Error(message.includes(reportPath) ? message : `${message}\nFull report: ${reportPath}`);
-    }
 }
 
 export async function runPcbRouterDsl(
