@@ -1,12 +1,13 @@
 # Changelog
 
-## 1.3.1 - Unreleased
+## 1.3.1 - 2026-10-14
 
 ### Compatibility and fixes
 
 - Restore missing runtime APIs in the JLCEDA background sandbox before dependencies initialize, including abort handling, UUID generation and timers. Return MCP errors when command dispatch fails instead of leaving requests waiting for a timeout.
 - Remove unused checkpoint secondary indexes, including the full document-content index, to prevent excessive IndexedDB/LevelDB growth.
 - Normalize pad and hole rotations for PCB previews on EasyEDA versions newer than 3.2.149 while preserving the earlier radians convention.
+- Lower the PCB preview cutout density threshold from 25% to 5% so valid copper clearance contours remain visible.
 - Inherit board solder mask rules when creating placement and routing vias.
 
 ### Dependencies

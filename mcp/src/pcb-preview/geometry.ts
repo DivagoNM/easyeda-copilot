@@ -71,7 +71,7 @@ export function ringFullyInside(container: PcbPoint[], candidate: PcbPoint[]): b
 }
 
 const CUTOUT_MIN_AREA = 0.2;
-const CUTOUT_MIN_DENSITY = 0.25;
+const CUTOUT_MIN_DENSITY = 0.05;
 
 export function isSliverCutout(ring: PcbPoint[]): boolean {
     const area = polygonArea(ring);
