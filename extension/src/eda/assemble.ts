@@ -681,7 +681,7 @@ async function assembleCircuitTask(circuit: CircuitAssembly, signal?: AbortSigna
     eda.sys_Log.add(`Assemble complete. Total time: ${totalDuration}ms`);
 }
 
-export function assembleCircuit(circuit: CircuitAssembly, parentSignal?: AbortSignal) {
+export function assembleCircuit(circuit: CircuitAssembly, parentSignal?: AbortSignal, uniqueIds?: ReadonlyMap<string, string>) {
     return runAssemblyQueueTask(assembleQueue, 'schematic', parentSignal, async signal => {
         signal.throwIfAborted();
         await sch_PrimitiveWireSnap.activate();
@@ -691,7 +691,7 @@ export function assembleCircuit(circuit: CircuitAssembly, parentSignal?: AbortSi
                 eda.sys_Log.add('[assemble] EasyEDA < 3 detected; using legacy assembler');
                 return await assembleCircuitTask(circuit, signal);
             }
-            return await assembleCircuitSourceTask(circuit, assembleCircuitTask, drawRect, signal);
+            return await assembleCircuitSourceTask(circuit, assembleCircuitTask, drawRect, signal, uniqueIds);
         } finally {
             sch_PrimitiveWireSnap.deactivate();
         }

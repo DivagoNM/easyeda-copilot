@@ -74,12 +74,12 @@ function fixture() {
             sub_part_name: `LM358DR.${designator.split('.')[1]}`, pos: { rotate: 0 }, pins: [] } as any;
         return { input, templateKey: symbols.getComponentTemplateKey(input), apiX: 100, apiY: 200 };
     };
-    const assemble = async (plans: any[], project = 'project') => {
+    const assemble = async (plans: any[], project = 'project', uniqueIds?: ReadonlyMap<string, string>) => {
         await exports.api.resolveMultipartSubPartNames(plans);
         const groups = exports.api.groupPlans(plans);
         const seeded = await exports.api.placeSeeds(groups, project);
         const templates = exports.api.collectComponentTemplates(records, groups, project, seeded);
-        const result = exports.api.cloneComponentsIntoSource(source.serializeDocumentSource(records), records, groups, templates);
+        const result = exports.api.cloneComponentsIntoSource(source.serializeDocumentSource(records), records, groups, templates, uniqueIds);
         records = source.parseDocumentSource(result.source);
         normalizeMultipartSourceDesignators(records, plans.map(p => ({ designator: p.input.designator,
             primitiveId: p.primitiveId, partUuid: p.input.part_uuid, subPartName: p.input.sub_part_name })));
@@ -112,6 +112,20 @@ test('later sections reuse a cached import without changing its original section
     assert.equal(b.component.partId, 'LM358DR.2');
     assert.equal(a.component.partId, 'LM358DR.1');
     assert.equal(a.attrs.Device, b.attrs.Device);
+});
+
+test('beautification preserves section identities in source for native seeds and cached clones', async () => {
+    const f = fixture();
+    const uniqueIds = new Map(['U1', 'U2'].flatMap(ref => [1, 2].map(part => [
+        JSON.stringify([ref, `LM358DR.${part}`]), `saved-${ref}`,
+    ] as const)));
+    const [seed] = await f.assemble([f.plan('U1.2')], 'project', uniqueIds);
+    assert.equal(seed.attrs['Unique ID'], 'saved-U1', 'also persists when nothing is cloned');
+    const units = await f.assemble(['U2.2', 'U1.1', 'U2.1'].map(ref => f.plan(ref)), 'project', uniqueIds);
+    assert.deepEqual(units.map(u => u.attrs['Unique ID']), ['saved-U2', 'saved-U1', 'saved-U2']);
+    assert.equal(f.imports, 1);
+    const [fresh] = await f.assemble([f.plan('U3.1')]);
+    assert.equal(fresh.attrs['Unique ID'], '', 'new components must not inherit a template identity');
 });
 
 test('different libraries and projects do not share imported identities', async () => {

@@ -529,7 +529,8 @@ function cloneComponentsIntoSource(
     records: SourceRecord[],
     groups: Map<string, PlannedComponent[]>,
     templates: Map<string, ComponentTemplate>,
-): { source: string; addedCount: number } {
+    uniqueIds?: ReadonlyMap<string, string>,
+): { source: string; addedCount: number; updatedUniqueIds: number } {
     let ticket = getMaxTicket(records);
     let zIndex = getMaxZIndex(records);
     const appended: SourceRecord[] = [];
@@ -603,9 +604,24 @@ function cloneComponentsIntoSource(
         }
     }
 
+    // Restore both native seeds and clones before submitting the rebuilt source.
+    const identities = new Map([...groups.values()].flat().map(plan => [plan.primitiveId,
+        uniqueIds?.get(JSON.stringify([rmPartFromDesignator(plan.input.designator), plan.input.sub_part_name ?? ''])),
+    ]));
+    let updatedUniqueIds = 0;
+    for (const record of [...records, ...appended]) {
+        if (record.outer.type !== 'ATTR' || record.inner?.key !== 'Unique ID') continue;
+        const uniqueId = identities.get(String(record.inner.parentId));
+        if (!uniqueId || record.inner.value === uniqueId) continue;
+        record.inner.value = uniqueId;
+        record.outer.ticket = ++ticket;
+        updatedUniqueIds++;
+    }
+
     return {
-        source: appendDocumentSource(source, appended),
+        source: updatedUniqueIds ? serializeDocumentSource([...records, ...appended]) : appendDocumentSource(source, appended),
         addedCount: appended.length,
+        updatedUniqueIds,
     };
 }
 
@@ -2198,6 +2214,7 @@ export async function assembleCircuitSourceTask(
     legacyAssembler: LegacyAssembler,
     legacyBlockDrawer: LegacyBlockDrawer,
     signal?: AbortSignal,
+    uniqueIds?: ReadonlyMap<string, string>,
 ): Promise<void> {
     const step = async <T>(action: () => Promise<T>) => {
         signal?.throwIfAborted();
@@ -2262,7 +2279,7 @@ export async function assembleCircuitSourceTask(
         if (!source) throw new Error('Document source is empty after component seed placement');
         records = parseDocumentSource(source);
         const templates = collectComponentTemplates(records, groups, projectUuid, seededKeys);
-        const componentResult = cloneComponentsIntoSource(source, records, groups, templates);
+        const componentResult = cloneComponentsIntoSource(source, records, groups, templates, uniqueIds);
 
         source = componentResult.source;
         records = parseDocumentSource(source);
@@ -2273,7 +2290,7 @@ export async function assembleCircuitSourceTask(
             subPartName: plan.input.sub_part_name,
         })));
 
-        if (componentResult.addedCount || multipartDesignators.changedAttributes) {
+        if (componentResult.addedCount || componentResult.updatedUniqueIds || multipartDesignators.changedAttributes) {
             source = serializeDocumentSource(records);
             const updatedSource = source;
             await step(() => setSourceAndRefresh(updatedSource, 'bulk component/multi-part designator'));

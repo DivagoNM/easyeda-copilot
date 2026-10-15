@@ -1911,7 +1911,11 @@ async function handleMessage(message: McpMessage, connectionEpoch: number, signa
 
                 await mcpCommandStep(
                     signal,
-                    () => assembleCircuit(circuit as Parameters<typeof assembleCircuit>[0], signal),
+                    () => assembleCircuit(circuit as Parameters<typeof assembleCircuit>[0], signal, new Map(
+                        componentIdentities.map(({ designator, subPartName, uniqueId }) => [
+                            JSON.stringify([designator, subPartName]), uniqueId,
+                        ]),
+                    )),
                 );
                 await mcpCommandStep(signal, () => waitForBeautifyComponents(expectedDesignators));
                 await mcpCommandStep(signal, () => restoreBeautifyComponentIdentities(componentIdentities));
