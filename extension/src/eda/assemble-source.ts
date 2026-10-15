@@ -180,7 +180,7 @@ async function resolveMultipartSubPartNames(plans: PlannedComponent[]): Promise<
         for (const plan of partPlans) {
             const index = getDesignatorPartIndex(plan.input)!;
             const subPartName = plan.input.sub_part_name || subPartNames[index - 1];
-            if (!subPartName || !subPartNames.includes(subPartName)) {
+            if (!subPartName || (subPartNames.length > 0 && !subPartNames.includes(subPartName))) {
                 throw new Error(
                     `Cannot resolve multi-part ${plan.input.designator} for ${partKey}; ` +
                     `library returned ${subPartNames.length} sub-parts`,

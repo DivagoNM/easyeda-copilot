@@ -89,7 +89,7 @@ function fixture() {
                 .map(r => [r.inner!.key, r.inner!.value])),
         }));
     };
-    return { plan, assemble, api: exports.api, get records() { return records; }, get imports() { return imports; } };
+    return { eda, plan, assemble, api: exports.api, get records() { return records; }, get imports() { return imports; } };
 }
 
 test('two LM358 packages use one import, distinct sections and separate designators', async () => {
@@ -141,6 +141,25 @@ test('invalid explicit section is rejected before importing or cloning', async (
     await assert.rejects(f.assemble([f.plan('U1.3')]), /Cannot resolve multi-part/);
     assert.equal(f.imports, 0);
 });
+
+for (const fails of [false, true]) {
+    test(`cached multipart import survives ${fails ? 'failed' : 'missing'} library metadata`, async () => {
+        const f = fixture();
+        const [a] = await f.assemble([f.plan('U1.1')]);
+        f.eda.lib_Device.get = async () => {
+            if (fails) throw new Error('library unavailable');
+            return undefined as any;
+        };
+        const [b] = await f.assemble([f.plan('U1.2')]);
+        assert.equal(f.imports, 1);
+        assert.equal(b.component.partId, 'LM358DR.2');
+        assert.equal(b.attrs.Device, a.attrs.Device);
+        const unresolved = f.plan('U2.2');
+        delete unresolved.input.sub_part_name;
+        await assert.rejects(f.assemble([unresolved]), /Cannot resolve multi-part/);
+        assert.equal(f.imports, 1, 'missing section names still require library metadata');
+    });
+}
 
 test('existing section on the page supplies another section without reimport', async () => {
     const f = fixture();
