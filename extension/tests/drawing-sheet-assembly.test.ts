@@ -74,6 +74,43 @@ test('disabled automatic resizing keeps a large sheet', async () => {
     assert.equal(result.y, (a0.height - 685) / 2 + 685);
 });
 
+for (const [actualIndex, label, width, height, expectedIndex] of [
+    [3, 'A0', 3400, 2100, 4], // AcquisitionMemory: A0 label with A1 dimensions.
+    [1, 'A1', 2000, 1200, 2], // ControlDisplay: A1 label with A3 dimensions.
+    [1, 'A1', 1030, 685, 1], // Correct the label even when the dimensions already fit.
+] as const) {
+    test(`inconsistent ${label} drawing at ${DRAWING_SHEETS[actualIndex].name} dimensions selects ${DRAWING_SHEETS[expectedIndex].name} for ${width}x${height}`, async () => {
+        const f = fixture();
+        const actual = DRAWING_SHEETS[actualIndex];
+        const expected = DRAWING_SHEETS[expectedIndex];
+        f.changeSheet(actual.width, actual.height, label);
+        Object.assign(f.circuit.blocks_rect[0], { width, height });
+        f.eda.lib_Device.get = async (uuid?: string) => {
+            assert.equal(uuid, expected.deviceUuid);
+            return { uuid: 'drawing' };
+        };
+        f.eda.sch_PrimitiveComponent.create = async () => {
+            f.events.push('create');
+            f.changeSheet(expected.width, expected.height, expected.name);
+        };
+        const result = await f.getOffset();
+        const selected = selectDrawingSheet(actual, width, height)!;
+        assert.deepEqual(f.events, ['create']);
+        assert.equal(result.x, selected.placement.x);
+        assert.equal(result.y, selected.placement.y + height);
+    });
+}
+
+test('custom drawing names or dimensions do not trigger standard drawing replacement', async () => {
+    for (const [width, height, name] of [[1170, 825, 'custom'], [1400, 900, 'A4']] as const) {
+        const f = fixture();
+        f.changeSheet(width, height, name);
+        await f.getOffset();
+        assert.deepEqual(f.events, []);
+        assert.ok(f.warnings.some(message => message.includes('Custom or inconsistent drawing symbol')));
+    }
+});
+
 test('completed drawing creation failure continues using the observed sheet dimensions', async () => {
     const f = fixture();
     f.eda.sch_PrimitiveComponent.create = async () => {

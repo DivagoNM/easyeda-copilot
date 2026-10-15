@@ -2136,24 +2136,25 @@ async function getAssemblyOffset(circuit: CircuitAssembly, signal?: AbortSignal)
     if (circuit.assembly_options?.auto_resize_page) {
         const page = await eda.dmt_Schematic.getCurrentSchematicPageInfo().catch(() => undefined);
         signal?.throwIfAborted();
-        const currentDrawing = DRAWING_SHEETS.find(sheet =>
-            page?.titleBlockData?.Symbol?.value === `Drawing-Symbol_${sheet.name}` &&
+        const standardSymbol = DRAWING_SHEETS.some(sheet => page?.titleBlockData?.Symbol?.value === `Drawing-Symbol_${sheet.name}`);
+        const currentDrawing = standardSymbol ? DRAWING_SHEETS.find(sheet =>
             pageSize.width === sheet.width && pageSize.height === sheet.height &&
             (page?.showTitleBlock === false || String(page?.titleBlockData?.['Title Block Position']?.value) === '3'),
-        );
+        ) : undefined;
         const selection = currentDrawing ? selectDrawingSheet({
             ...pageSize,
             showTitleBlock: page?.showTitleBlock,
         }, root.width, root.height) : undefined;
-        if (selection) {
+        if (selection && currentDrawing) {
             let usePlacement = true;
-            if (selection.resized) {
-                const drawing = await eda.lib_Device.get(selection.sheet.deviceUuid, DRAWING_LIBRARY_UUID)
+            const selectedDrawing = selection.resized ? selection.sheet : currentDrawing;
+            if (selection.resized || page?.titleBlockData?.Symbol?.value !== `Drawing-Symbol_${selectedDrawing.name}`) {
+                const drawing = await eda.lib_Device.get(selectedDrawing.deviceUuid, DRAWING_LIBRARY_UUID)
                     .catch(() => undefined);
                 signal?.throwIfAborted();
                 if (!drawing) {
                     usePlacement = false;
-                    eda.sys_Log.add(`[source-assemble] Drawing symbol ${selection.sheet.name} is unavailable; keeping current page size`, ESYS_LogType.WARNING);
+                    eda.sys_Log.add(`[source-assemble] Drawing symbol ${selectedDrawing.name} is unavailable; keeping current page size`, ESYS_LogType.WARNING);
                 } else {
                     // Drawing creation can refresh its editor context before the API promise resolves.
                     // Observe the resulting sheet instead of waiting indefinitely for that promise.
@@ -2174,14 +2175,14 @@ async function getAssemblyOffset(circuit: CircuitAssembly, signal?: AbortSignal)
                         signal?.throwIfAborted();
                         updated = pageSize.width === selection.sheet.width &&
                             pageSize.height === selection.sheet.height &&
-                            current?.titleBlockData?.Symbol?.value === `Drawing-Symbol_${selection.sheet.name}`;
+                            current?.titleBlockData?.Symbol?.value === `Drawing-Symbol_${selectedDrawing.name}`;
                         if (updated) break;
                         if (createFailed) break;
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
                     if (!updated) {
                         if (!createFailed) {
-                            throw new Error(`Drawing symbol ${selection.sheet.name} did not resize the page`);
+                            throw new Error(`Drawing symbol ${selectedDrawing.name} did not resize the page`);
                         }
                         usePlacement = false;
                         // A completed failure may still have changed the page partially.
@@ -2190,9 +2191,9 @@ async function getAssemblyOffset(circuit: CircuitAssembly, signal?: AbortSignal)
                             x: (pageSize.width - root.width) / 2,
                             y: ((pageSize.height - root.height) / 2) + root.height,
                         };
-                        eda.sys_Log.add(`[source-assemble] Drawing symbol ${selection.sheet.name} did not resize the page; keeping the observed page size: ${String(createError)}`, ESYS_LogType.WARNING);
+                        eda.sys_Log.add(`[source-assemble] Drawing symbol ${selectedDrawing.name} did not resize the page; keeping the observed page size: ${String(createError)}`, ESYS_LogType.WARNING);
                     } else {
-                        eda.sys_Log.add(`[source-assemble] Resized schematic page to ${selection.sheet.name}`);
+                        eda.sys_Log.add(`[source-assemble] Resized schematic page to ${selectedDrawing.name}`);
                     }
                 }
             }
