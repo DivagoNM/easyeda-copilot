@@ -46,3 +46,12 @@ export const getComponentTemplateKey = (component: AssemblyComponent) => {
         ...(style ? { portStyle: style, portMode: eda.sys_Environment.isOnlineMode() ? 'library' : 'native' } : {}),
     });
 };
+
+// A device import contains every section of its symbol. Section templates still
+// have distinct keys, but must not cause separate project Device/Symbol imports.
+export const getComponentImportKey = (component: AssemblyComponent) => {
+    const key = getComponentTemplateKey(component);
+    const identity = JSON.parse(key);
+    if (identity.kind === 'DEVICE') identity.subPartName = '';
+    return JSON.stringify(identity);
+};

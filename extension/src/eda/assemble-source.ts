@@ -1,4 +1,4 @@
-import { getNetFlagKind, getSpecialSignalName, getComponentTemplateKey, getNetPortStyle } from "./assembly-symbols";
+import { getNetFlagKind, getSpecialSignalName, getComponentTemplateKey, getComponentImportKey, getNetPortStyle } from "./assembly-symbols";
 import { CircuitAssembly } from "@copilot/shared/types/circuit";
 import PQueue from "p-queue";
 import { searchFreePlaceV2 } from "./free-place-searcher";
@@ -78,14 +78,15 @@ type WireSegment = [number, number, number, number];
 
 interface CachedComponentTemplate {
     projectUuid: string;
-    templateKey: string;
     seedApiX: number;
     seedApiY: number;
     component: SourceRecord;
     attributes: SourceRecord[];
 }
 
-const componentTemplateCache = new Map<string, CachedComponentTemplate>();
+// One source seed per imported device; section selection happens in the derived
+// template's partId, without importing the library device again.
+const componentImportCache = new Map<string, CachedComponentTemplate>();
 
 function selectWireAttributeTemplates(records: SourceRecord[], parentId: string): SourceRecord[] {
     const selected = new Map<string, SourceRecord>();
@@ -149,7 +150,7 @@ const getDesignatorPartIndex = (component: AssemblyComponent): number | undefine
 };
 
 async function resolveMultipartSubPartNames(plans: PlannedComponent[]): Promise<void> {
-    const unresolved = plans.filter(plan => !plan.input.sub_part_name && getDesignatorPartIndex(plan.input));
+    const unresolved = plans.filter(plan => plan.input.sub_part_name || getDesignatorPartIndex(plan.input));
     if (!unresolved.length) return;
 
     const byPartUuid = new Map<string, PlannedComponent[]>();
@@ -178,8 +179,8 @@ async function resolveMultipartSubPartNames(plans: PlannedComponent[]): Promise<
 
         for (const plan of partPlans) {
             const index = getDesignatorPartIndex(plan.input)!;
-            const subPartName = subPartNames[index - 1];
-            if (!subPartName) {
+            const subPartName = plan.input.sub_part_name || subPartNames[index - 1];
+            if (!subPartName || !subPartNames.includes(subPartName)) {
                 throw new Error(
                     `Cannot resolve multi-part ${plan.input.designator} for ${partKey}; ` +
                     `library returned ${subPartNames.length} sub-parts`,
@@ -308,15 +309,16 @@ function groupPlans(plans: PlannedComponent[]): Map<string, PlannedComponent[]> 
     return groups;
 }
 
-const getTemplateCacheKey = (projectUuid: string, templateKey: string) => `${projectUuid}:${templateKey}`;
+const getImportCacheKey = (projectUuid: string, component: AssemblyComponent) =>
+    `${projectUuid}:${getComponentImportKey(component)}`;
 
 async function cacheTemplatesFromCurrentPage(
     groups: Map<string, PlannedComponent[]>,
     projectUuid: string,
     records: SourceRecord[],
 ): Promise<number> {
-    const missing = [...groups.entries()].filter(([key, group]) =>
-        !componentTemplateCache.has(getTemplateCacheKey(projectUuid, key)) &&
+    const missing = [...groups.entries()].filter(([, group]) =>
+        !componentImportCache.has(getImportCacheKey(projectUuid, group[0].input)) &&
         getNetFlagKind(group[0].input) === undefined &&
         !getNetPortStyle(group[0].input),
     );
@@ -327,15 +329,13 @@ async function cacheTemplatesFromCurrentPage(
     for (const primitive of primitives) {
         const componentState = primitive.getState_Component?.();
         if (!componentState?.uuid) continue;
-        const subPartName = primitive.getState_SubPartName?.() ?? '';
-        const candidate = missing.find(([key, group]) =>
-            !componentTemplateCache.has(getTemplateCacheKey(projectUuid, key)) &&
-            samePartUuid(group[0].input.part_uuid, readPartUuidFromPrimitive(primitive)) &&
-            (!group[0].input.sub_part_name || group[0].input.sub_part_name === subPartName),
+        const candidate = missing.find(([, group]) =>
+            !componentImportCache.has(getImportCacheKey(projectUuid, group[0].input)) &&
+            samePartUuid(group[0].input.part_uuid, readPartUuidFromPrimitive(primitive)),
         );
         if (!candidate) continue;
 
-        const [templateKey] = candidate;
+        const [, group] = candidate;
         const primitiveId = primitive.getState_PrimitiveId();
         const component = records.find(record =>
             record.outer.type === 'COMPONENT' && record.outer.id === primitiveId && record.inner,
@@ -346,9 +346,8 @@ async function cacheTemplatesFromCurrentPage(
         );
         if (!attributes.length) continue;
 
-        componentTemplateCache.set(getTemplateCacheKey(projectUuid, templateKey), {
+        componentImportCache.set(getImportCacheKey(projectUuid, group[0].input), {
             projectUuid,
-            templateKey,
             seedApiX: to2(primitive.getState_X()),
             seedApiY: to2(primitive.getState_Y()),
             component: cloneSourceRecord(component),
@@ -364,9 +363,13 @@ async function placeSeeds(
     projectUuid: string,
 ): Promise<Set<string>> {
     const seededKeys = new Set<string>();
-    const pending = [...groups.entries()].filter(([key]) =>
-        !componentTemplateCache.has(getTemplateCacheKey(projectUuid, key)),
-    );
+    const requestedImports = new Set<string>();
+    const pending = [...groups.entries()].filter(([, group]) => {
+        const importKey = getImportCacheKey(projectUuid, group[0].input);
+        if (componentImportCache.has(importKey) || requestedImports.has(importKey)) return false;
+        requestedImports.add(importKey);
+        return true;
+    });
     if (!pending.length) return seededKeys;
 
     const commitSeed = async (key: string, seed: PlannedComponent) => {
@@ -429,19 +432,10 @@ function collectComponentTemplates(
 ): Map<string, ComponentTemplate> {
     const templates = new Map<string, ComponentTemplate>();
 
-    for (const [key, group] of groups) {
-        const cached = componentTemplateCache.get(getTemplateCacheKey(projectUuid, key));
-        if (cached && !seededKeys.has(key)) {
-            templates.set(key, {
-                originApiX: cached.seedApiX,
-                originApiY: cached.seedApiY,
-                firstPlanSeeded: false,
-                component: cloneSourceRecord(cached.component),
-                attributes: cached.attributes.map(cloneSourceRecord),
-            });
-            continue;
-        }
-
+    // Capture imports first so every requested section can derive a template,
+    // irrespective of the order in which section groups are iterated.
+    for (const key of seededKeys) {
+        const group = groups.get(key)!;
         const seed = group[0];
         if (!seed.primitiveId) throw new Error(`Seed primitive id missing for ${seed.input.designator}`);
 
@@ -455,21 +449,26 @@ function collectComponentTemplates(
         );
         if (!attributes.length) throw new Error(`Source ATTR records not found for ${seed.input.designator}`);
 
-        const template: ComponentTemplate = {
-            originApiX: seed.apiX,
-            originApiY: seed.apiY,
-            firstPlanSeeded: true,
-            component,
-            attributes,
-        };
-        templates.set(key, template);
-        componentTemplateCache.set(getTemplateCacheKey(projectUuid, key), {
+        componentImportCache.set(getImportCacheKey(projectUuid, seed.input), {
             projectUuid,
-            templateKey: key,
             seedApiX: seed.apiX,
             seedApiY: seed.apiY,
             component: cloneSourceRecord(component),
             attributes: attributes.map(cloneSourceRecord),
+        });
+    }
+
+    for (const [key, group] of groups) {
+        const cached = componentImportCache.get(getImportCacheKey(projectUuid, group[0].input));
+        if (!cached) throw new Error(`Device import missing for ${group[0].input.designator}`);
+        const component = cloneSourceRecord(cached.component);
+        if (group[0].input.sub_part_name) component.inner!.partId = group[0].input.sub_part_name;
+        templates.set(key, {
+            originApiX: cached.seedApiX,
+            originApiY: cached.seedApiY,
+            firstPlanSeeded: seededKeys.has(key),
+            component,
+            attributes: cached.attributes.map(cloneSourceRecord),
         });
     }
 
@@ -2248,8 +2247,8 @@ export async function assembleCircuitSourceTask(
         const groups = groupPlans(plans);
         let records = parseDocumentSource(source);
         const pageCachedVariants = await step(() => cacheTemplatesFromCurrentPage(groups, projectUuid, records));
-        const cachedVariants = [...groups.keys()].filter(key =>
-            componentTemplateCache.has(getTemplateCacheKey(projectUuid, key)),
+        const cachedVariants = [...groups.values()].filter(group =>
+            componentImportCache.has(getImportCacheKey(projectUuid, group[0].input)),
         ).length;
         eda.sys_Log.add(
             `[source-assemble] ${plans.length} components, ${groups.size} variants, ` +
