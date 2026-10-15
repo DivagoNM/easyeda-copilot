@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.2 - 2026-10-16
+
+### Schematic fixes
+
+- Import each multipart device once per project and derive its section templates from that shared import, keeping Device and Symbol references consistent across sections. Reuse matching devices already present on the current page.
+- Preserve component Unique IDs directly in the rebuilt document source during schematic beautification, including native seeds and cached clones.
+- Preserve a removed component's Unique ID when it is recreated with the same base designator, including all sections of a multipart package.
+- Correct standard drawing frames whose symbol name disagrees with their actual dimensions, then select and persist the smallest standard sheet that fits the beautified schematic. Keep custom frames and disabled automatic resizing unchanged.
+- Allow cached multipart imports with explicit section names when library metadata is unavailable; continue validating names when metadata is available.
+
+### Compatibility
+
+- Keep existing MCP tool schemas and the legacy schematic assembly path unchanged. Retain backend 0.4.0 and router 0.3.2; publish MCP 1.3.2 with matching extension version metadata.
+
 ## 1.3.1 - 2026-10-14
 
 ### Compatibility and fixes
