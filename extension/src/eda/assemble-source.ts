@@ -606,7 +606,8 @@ function cloneComponentsIntoSource(
 
     // Restore both native seeds and clones before submitting the rebuilt source.
     const identities = new Map([...groups.values()].flat().map(plan => [plan.primitiveId,
-        uniqueIds?.get(JSON.stringify([rmPartFromDesignator(plan.input.designator), plan.input.sub_part_name ?? ''])),
+        uniqueIds?.get(JSON.stringify([rmPartFromDesignator(plan.input.designator), plan.input.sub_part_name ?? ''])) ??
+        uniqueIds?.get(rmPartFromDesignator(plan.input.designator)),
     ]));
     let updatedUniqueIds = 0;
     for (const record of [...records, ...appended]) {
@@ -2239,6 +2240,7 @@ export async function assembleCircuitSourceTask(
 
     try {
         const workingCircuit = createSourceWorkingCircuit(circuit);
+        const preservedUniqueIds = new Map(uniqueIds);
         const currentDocument = await step(() => eda.dmt_SelectControl.getCurrentDocumentInfo());
         if (!currentDocument) throw new Error('Current schematic document info not found');
         const projectUuid = currentDocument.parentProjectUuid ?? currentDocument.uuid;
@@ -2247,6 +2249,17 @@ export async function assembleCircuitSourceTask(
         if (removalPlan.componentIds.size || removalPlan.points.length) {
             const currentSource = await step(() => eda.sys_FileManager.getDocumentSource());
             if (!currentSource) throw new Error('Document source is empty before source removals');
+            // Preserve package identity even when replacement requires removal and recreation.
+            const currentRecords = parseDocumentSource(currentSource);
+            for (const record of currentRecords) {
+                if (record.outer.type !== 'ATTR' || record.inner?.key !== 'Designator' ||
+                    !removalPlan.componentIds.has(String(record.inner.parentId))) continue;
+                const uid = currentRecords.find(attribute => attribute.outer.type === 'ATTR' &&
+                    attribute.inner?.parentId === record.inner!.parentId && attribute.inner?.key === 'Unique ID')?.inner?.value;
+                if (typeof uid === 'string' && uid) {
+                    preservedUniqueIds.set(rmPartFromDesignator(String(record.inner.value)), uid);
+                }
+            }
             const removalResult = removeSourceObjects(currentSource, removalPlan);
             if (removalResult.removedRecords) {
                 await step(() => setSourceAndRefresh(removalResult.source, 'rm_components/rm_net'));
@@ -2280,7 +2293,7 @@ export async function assembleCircuitSourceTask(
         if (!source) throw new Error('Document source is empty after component seed placement');
         records = parseDocumentSource(source);
         const templates = collectComponentTemplates(records, groups, projectUuid, seededKeys);
-        const componentResult = cloneComponentsIntoSource(source, records, groups, templates, uniqueIds);
+        const componentResult = cloneComponentsIntoSource(source, records, groups, templates, preservedUniqueIds);
 
         source = componentResult.source;
         records = parseDocumentSource(source);
