@@ -82,3 +82,18 @@ test('a block may span pages; cross-page conflicts and malformed page data are r
     assert.equal(broken.declared_blocks, undefined);
     assert.match(broken.declaration_errors![0], /could not be merged/);
 });
+
+test('a package whose sections are declared in different blocks is reported and left out of both', async () => {
+    const page = await getSchematicGroups({ wires: [], components: [
+        part('U2', 0, { block: 'preamp' }, 'U2.1'), part('U2', 1000, { block: 'filter' }, 'U2.2'),
+        part('R1', 2000, { block: 'preamp' }), part('R2', 3000, { block: 'filter' }),
+    ] });
+    assert.deepEqual(page.declared_blocks, [{ name: 'filter', refs: 'R2' }, { name: 'preamp', refs: 'R1' }]);
+    assert.deepEqual(page.declaration_errors, ['U2: sections declared in several PCB blocks (filter, preamp); omitted from them.']);
+    const merged = mergeSchematicGroups([
+        { maybe_blocks: [], wires: [], declared_blocks: [{ name: 'preamp', refs: 'U3.1 R5' }] },
+        { maybe_blocks: [], wires: [], declared_blocks: [{ name: 'filter', refs: 'U3.2' }] },
+    ]);
+    assert.deepEqual(merged.declared_blocks, [{ name: 'preamp', refs: 'R5' }]);
+    assert.deepEqual(merged.declaration_errors, ['U3: sections declared in several PCB blocks (filter, preamp); omitted from them.']);
+});

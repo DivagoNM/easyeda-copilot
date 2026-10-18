@@ -28,6 +28,8 @@ Designers can declare the PCB hierarchy with component properties: `PCB Block` (
 
 - `declared_blocks` lists every block with at least one declared component, using the same references as `maybe_blocks`. Unlike `maybe_blocks`, it is explicit: one block may span pages in full mode, and its references are merged.
 - `PCB Module`, `PCB Attach` and `PCB Role` may be set on any member. Conflicting values within one block are reported in `declaration_errors` and omitted; the block is kept. `declared_modules` lists the modules of the declared blocks.
+- A package whose sections are declared in different blocks cannot be placed in one: it is reported in `declaration_errors` and left out of those blocks.
+- Each assembled instance gets only its own `PCB Block`. Copies of a component already on the page never inherit its `PCB Block`, `PCB Module`, `PCB Attach` or `PCB Role`.
 - `declaration_errors` concerns the declarations only and does not make `maybe_blocks` or `wires` partial. Without declarations, these three keys are absent.
 
 The response excludes page IDs, scores, geometry and library UUIDs. Full-mode arrays follow schematic page order, so repeated references from different pages are not deduplicated. Empty results are `{"maybe_blocks":[],"wires":[]}`. Optional `errors` are bounded, non-fatal diagnostics for a partial result; missing wires do not prove electrical isolation. An unreadable component list, wrong document type or page change remains a fatal error.

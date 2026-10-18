@@ -7,6 +7,9 @@ export const PCB_BLOCK_PROPERTIES = {
     role: 'PCB Role',
 } as const;
 
+/** Declarations belong to one instance: copies of a template must not inherit them. */
+export const PCB_BLOCK_PROPERTY_KEYS: ReadonlySet<string> = new Set(Object.values(PCB_BLOCK_PROPERTIES));
+
 export interface PcbDeclaration { block: string; module?: string; attach?: string; role?: string }
 
 type PropertyPrimitive = {

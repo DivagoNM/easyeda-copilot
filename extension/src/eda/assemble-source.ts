@@ -22,7 +22,7 @@ import { normalizeMultipartSourceDesignators } from "./multipart-source-designat
 import { LEGACY_PORT_LENGTHS, matchingWirePort, wirePortLabel, wirePortLengths, wirePortMinLength } from './wire-port-layout';
 import { formatUnresolvedNetPortMessage, type UnresolvedNetPortSample } from './unresolved-net-port-message';
 import { readPartUuidFromPrimitive, storePartUuidOnPrimitive } from './component-part-ref';
-import { assemblyPcbBlock, storePcbBlockOnPrimitive } from './pcb-block-properties';
+import { assemblyPcbBlock, PCB_BLOCK_PROPERTY_KEYS, storePcbBlockOnPrimitive } from './pcb-block-properties';
 import { samePartUuid } from '@copilot/shared/types/lcsc';
 import { DRAWING_LIBRARY_UUID, DRAWING_SHEETS, selectDrawingSheet } from './schematic-page-geometry';
 
@@ -573,6 +573,9 @@ function cloneComponentsIntoSource(
             for (const attributeTemplate of template.attributes) {
                 const attribute = cloneSourceRecord(attributeTemplate);
                 if (!attribute.inner) continue;
+                // The template may be another component on the page; its PCB
+                // declarations are not this instance's. finalize writes PCB Block.
+                if (PCB_BLOCK_PROPERTY_KEYS.has(String(attribute.inner.key))) continue;
 
                 attribute.outer.id = makeSourceId();
                 attribute.outer.ticket = ++ticket;

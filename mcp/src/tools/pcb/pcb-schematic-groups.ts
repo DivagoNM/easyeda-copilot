@@ -55,7 +55,15 @@ function toPcbBlockDeclarations(source: SchematicGroups, designators: Set<string
             return [{ name: block.name, components: [...components].sort(),
                 ...(module ? { module } : {}), ...(attachTo ? { attachTo } : {}), ...(role ? { role } : {}) }];
         });
-        return blocks.length || incomplete ? { blocks, ...(incomplete ? { incomplete: true } : {}) } : undefined;
+        // A package in several blocks (sections declared apart) fits none of them.
+        const owners = new Map<string, number>();
+        for (const block of blocks) for (const name of block.components) owners.set(name, (owners.get(name) ?? 0) + 1);
+        const placeable = blocks.flatMap(block => {
+            const components = block.components.filter(name => owners.get(name) === 1);
+            if (components.length !== block.components.length) incomplete = true;
+            return components.length ? [{ ...block, components }] : [];
+        });
+        return placeable.length || incomplete ? { blocks: placeable, ...(incomplete ? { incomplete: true } : {}) } : undefined;
     } catch {
         // Malformed editor metadata must not break validation; keep the heuristic context.
         return { blocks: [], incomplete: true };

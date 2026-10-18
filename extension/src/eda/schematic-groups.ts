@@ -95,7 +95,7 @@ export function mergeSchematicGroups(pages: readonly SchematicGroups[]): Schemat
     let declared: Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> = {};
     try {
         declared = declarationResult(pages.flatMap(page => (page.declared_blocks ?? []).map(block => ({
-            name: block.name, refs: block.refs.split(/\s+/).filter(Boolean),
+            name: block.name, refs: block.refs.split(/\s+/).filter(Boolean).map(ref => ({ ref, base: sectionBase(ref) })),
             values: { module: block.module, attach: block.attach_to, role: block.role },
         }))), issues.report);
     } catch (error) { issues.report('PCB block declarations could not be merged; omitted.', error); }
@@ -103,22 +103,32 @@ export function mergeSchematicGroups(pages: readonly SchematicGroups[]): Schemat
     return { ...result, ...(errors.length ? { errors } : {}), ...declared, ...(declarationErrors ? { declaration_errors: declarationErrors } : {}) };
 }
 
-type DeclaredInput = { name: string; refs: string[]; values: Partial<Record<'module' | 'attach' | 'role', string>> };
+type DeclaredInput = { name: string; refs: { ref: string; base: string }[]; values: Partial<Record<'module' | 'attach' | 'role', string>> };
+/** Page results only keep section references; the part after the last dot is the section. */
+const sectionBase = (ref: string) => ref.includes('.') ? ref.slice(0, ref.lastIndexOf('.')) : ref;
 const PROPERTY_NAME = { module: PCB_BLOCK_PROPERTIES.module, attach: PCB_BLOCK_PROPERTIES.attach, role: PCB_BLOCK_PROPERTIES.role } as const;
 
 /** Group declarations by block. A block attribute with conflicting values is
- * reported and omitted rather than guessed; the block itself is kept. */
+ * reported and omitted rather than guessed; the block itself is kept. A package
+ * whose sections are declared in several blocks cannot be placed in one, so it
+ * is reported and left out of all of them. */
 function declarationResult(inputs: DeclaredInput[], report: Report): Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> {
+    const blocksOfBase = new Map<string, Set<string>>();
+    for (const input of inputs) for (const { base } of input.refs) blocksOfBase.set(base, (blocksOfBase.get(base) ?? new Set()).add(input.name));
+    for (const [base, names] of blocksOfBase) if (names.size > 1) {
+        report(`${base}: sections declared in several PCB blocks (${sorted(names).join(', ')}); omitted from them.`);
+    }
     const byName = new Map<string, { refs: Set<string>; values: Record<'module' | 'attach' | 'role', Set<string>> }>();
     for (const input of inputs) {
         const entry = byName.get(input.name) ?? { refs: new Set<string>(), values: { module: new Set<string>(), attach: new Set<string>(), role: new Set<string>() } };
-        for (const ref of input.refs) entry.refs.add(ref);
+        for (const { ref, base } of input.refs) if (blocksOfBase.get(base)!.size === 1) entry.refs.add(ref);
         for (const key of ['module', 'attach', 'role'] as const) if (input.values[key]) entry.values[key].add(input.values[key]!);
         byName.set(input.name, entry);
     }
     const blocks: NonNullable<SchematicGroups['declared_blocks']> = [];
     for (const name of sorted(byName.keys())) {
         const { refs, values } = byName.get(name)!;
+        if (!refs.size) continue;
         const single = (key: 'module' | 'attach' | 'role') => {
             if (values[key].size <= 1) return [...values[key]][0];
             report(`PCB block ${name}: conflicting ${PROPERTY_NAME[key]} values (${sorted(values[key]).join(', ')}); omitted.`);
@@ -571,7 +581,7 @@ export async function getSchematicGroups(snapshot?: SchematicGroupsSnapshot): Pr
             let declared: Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> = {};
             try {
                 const refs = sectionRefs(components);
-                declared = declarationResult(components.flatMap((c, i) => c.pcb ? [{ name: c.pcb.block, refs: [refs[i]],
+                declared = declarationResult(components.flatMap((c, i) => c.pcb ? [{ name: c.pcb.block, refs: [{ ref: refs[i], base: c.designator }],
                     values: { module: c.pcb.module, attach: c.pcb.attach, role: c.pcb.role } }] : []), declarationIssues.report);
             } catch (error) { declarationIssues.report('PCB block declarations unavailable; heuristic groups preserved.', error); }
             const declarationErrors = declarationIssues.result().errors;
