@@ -1,9 +1,10 @@
 import type { SchematicGroups } from '@copilot/shared/types/schematic-groups';
 import { shortSymbolsMap } from './types';
+import { PCB_BLOCK_PROPERTIES, readPcbDeclaration, type PcbDeclaration } from './pcb-block-properties';
 
 type Point = { x: number; y: number };
 type Pin = Point & { number: string; net: string | null };
-type Component = Point & { designator: string; subPartName?: string; pins: Pin[] };
+type Component = Point & { designator: string; subPartName?: string; pins: Pin[]; pcb?: PcbDeclaration };
 type Box = { minX: number; minY: number; maxX: number; maxY: number };
 
 /** Plain-data input for reproducible offline tests; not an MCP input parameter. */
@@ -61,14 +62,14 @@ function boundedDiagnostics(messages: Iterable<string>) {
     return errors;
 }
 
-function diagnostics() {
+function diagnostics(scope?: string) {
     const messages = new Set<string>();
     const report: Report = (message, cause) => {
         if (messages.has(message)) return;
         messages.add(message);
         try {
             if (typeof eda !== 'undefined') eda.sys_Log.add(
-                `[schematic-groups] ${message}${cause ? ` ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}` : ''}`,
+                `[schematic-groups${scope ? ` ${scope}` : ''}] ${message}${cause ? ` ${cause instanceof Error ? cause.stack ?? cause.message : String(cause)}` : ''}`,
                 ESYS_LogType.WARNING,
             );
         } catch { /* Logging must not discard a partial result. */ }
@@ -81,17 +82,60 @@ function diagnostics() {
     };
 }
 
-/** Concatenate page-local results without inventing cross-page groups or wire islands. */
+/** Concatenate page-local results without inventing cross-page groups or wire islands.
+ * Declarations name their block explicitly, so one block may span pages. */
 export function mergeSchematicGroups(pages: readonly SchematicGroups[]): SchematicGroups {
     const result: SchematicGroups = {
         maybe_blocks: pages.flatMap(page => page.maybe_blocks),
         wires: pages.flatMap(page => page.wires),
     };
     const errors = boundedDiagnostics(pages.flatMap(page => page.errors ?? []));
-    return errors.length ? { ...result, errors } : result;
+    const issues = diagnostics('declarations');
+    for (const message of pages.flatMap(page => page.declaration_errors ?? [])) issues.report(message);
+    let declared: Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> = {};
+    try {
+        declared = declarationResult(pages.flatMap(page => (page.declared_blocks ?? []).map(block => ({
+            name: block.name, refs: block.refs.split(/\s+/).filter(Boolean),
+            values: { module: block.module, attach: block.attach_to, role: block.role },
+        }))), issues.report);
+    } catch (error) { issues.report('PCB block declarations could not be merged; omitted.', error); }
+    const declarationErrors = issues.result().errors;
+    return { ...result, ...(errors.length ? { errors } : {}), ...declared, ...(declarationErrors ? { declaration_errors: declarationErrors } : {}) };
 }
 
-async function collectSnapshot(report: Report): Promise<SchematicGroupsSnapshot> {
+type DeclaredInput = { name: string; refs: string[]; values: Partial<Record<'module' | 'attach' | 'role', string>> };
+const PROPERTY_NAME = { module: PCB_BLOCK_PROPERTIES.module, attach: PCB_BLOCK_PROPERTIES.attach, role: PCB_BLOCK_PROPERTIES.role } as const;
+
+/** Group declarations by block. A block attribute with conflicting values is
+ * reported and omitted rather than guessed; the block itself is kept. */
+function declarationResult(inputs: DeclaredInput[], report: Report): Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> {
+    const byName = new Map<string, { refs: Set<string>; values: Record<'module' | 'attach' | 'role', Set<string>> }>();
+    for (const input of inputs) {
+        const entry = byName.get(input.name) ?? { refs: new Set<string>(), values: { module: new Set<string>(), attach: new Set<string>(), role: new Set<string>() } };
+        for (const ref of input.refs) entry.refs.add(ref);
+        for (const key of ['module', 'attach', 'role'] as const) if (input.values[key]) entry.values[key].add(input.values[key]!);
+        byName.set(input.name, entry);
+    }
+    const blocks: NonNullable<SchematicGroups['declared_blocks']> = [];
+    for (const name of sorted(byName.keys())) {
+        const { refs, values } = byName.get(name)!;
+        const single = (key: 'module' | 'attach' | 'role') => {
+            if (values[key].size <= 1) return [...values[key]][0];
+            report(`PCB block ${name}: conflicting ${PROPERTY_NAME[key]} values (${sorted(values[key]).join(', ')}); omitted.`);
+            return undefined;
+        };
+        const module = single('module'), attach = single('attach'), role = single('role');
+        blocks.push({ name, refs: sorted(refs).join(' '), ...(module ? { module } : {}), ...(attach ? { attach_to: attach } : {}), ...(role ? { role } : {}) });
+    }
+    const modules = new Map<string, string[]>();
+    for (const block of blocks) if (block.module) modules.set(block.module, [...(modules.get(block.module) ?? []), block.name]);
+    return {
+        ...(blocks.length ? { declared_blocks: blocks } : {}),
+        ...(modules.size ? { declared_modules: sorted(modules.keys()).map(name => ({ name, blocks: modules.get(name)! })) } : {}),
+    };
+}
+
+async function collectSnapshot(report: Report, reportDeclaration: Report): Promise<SchematicGroupsSnapshot> {
     const document = await eda.dmt_SelectControl.getCurrentDocumentInfo();
     if (document?.documentType !== EDMT_EditorDocumentType.SCHEMATIC_PAGE) {
         throw new Error('Open a schematic page before requesting schematic groups.');
@@ -129,6 +173,9 @@ async function collectSnapshot(report: Report): Promise<SchematicGroupsSnapshot>
                 let subPartName: string | undefined;
                 try { subPartName = primitive.getState_SubPartName() || undefined; }
                 catch (error) { report(`${designator}: part name unavailable; using base reference.`, error); }
+                let pcb: PcbDeclaration | undefined;
+                try { pcb = readPcbDeclaration(typeof primitive.getState_OtherProperty === 'function' ? primitive.getState_OtherProperty() : undefined); }
+                catch (error) { reportDeclaration(`${designator}: component properties unavailable; PCB block declaration omitted.`, error); }
                 let position = { x: NaN, y: NaN };
                 try { position = { x: primitive.getState_X(), y: normWireY(primitive.getState_Y()) }; }
                 catch (error) { report(`${designator}: origin unavailable; using valid pins if possible.`, error); }
@@ -145,7 +192,7 @@ async function collectSnapshot(report: Report): Promise<SchematicGroupsSnapshot>
                         } catch (error) { report(`${designator}: unreadable pin omitted; wires may be incomplete.`, error); }
                     }
                 } catch (error) { report(`${designator}: pins unavailable; keeping position only, connections omitted.`, error); }
-                return { designator, subPartName, ...position, pins };
+                return { designator, subPartName, ...position, pins, ...(pcb ? { pcb } : {}) };
             } catch (error) {
                 report(`${designator}: component unreadable; omitted from groups and pins.`, error);
                 return undefined;
@@ -431,6 +478,29 @@ function pairScores(components: Component[], boxes: Box[], graph: WireGraph, sca
     return scores;
 }
 
+/** Block membership identifies a symbol section, not its shared physical package.
+ * Keep base designators unchanged for netlist lookups, wire pins and net prevalence. */
+function sectionRefs(components: Component[]): string[] {
+    const partCounts = new Map<string, number>();
+
+    for (const c of components) {
+        partCounts.set(c.designator, (partCounts.get(c.designator) ?? 0) + 1);
+    }
+
+    return components.map(c => {
+        const suffix = getPartSuffix(c.subPartName);
+        const hasSeveralParts = (partCounts.get(c.designator) ?? 0) > 1;
+
+        if (!suffix || (suffix === '1' && !hasSeveralParts)) {
+            return c.designator;
+        }
+
+        return c.designator.endsWith(`.${suffix}`)
+            ? c.designator
+            : `${c.designator}.${suffix}`;
+    });
+}
+
 function findMaybeBlocks(components: Component[], graph: WireGraph, report: Report): string[] {
     if (components.length < 2) return [];
     const boxes = components.map(c => bounds([c, ...c.pins]));
@@ -472,26 +542,7 @@ function findMaybeBlocks(components: Component[], graph: WireGraph, report: Repo
         for (const other of active.values()) offer(other, merged);
         active.set(merged.id, merged);
     }
-    // Block membership identifies a symbol section, not its shared physical package.
-    // Keep base designators unchanged for netlist lookups, wire pins and net prevalence.
-    const partCounts = new Map<string, number>();
-
-    for (const c of components) {
-        partCounts.set(c.designator, (partCounts.get(c.designator) ?? 0) + 1);
-    }
-
-    const refs = components.map(c => {
-        const suffix = getPartSuffix(c.subPartName);
-        const hasSeveralParts = (partCounts.get(c.designator) ?? 0) > 1;
-
-        if (!suffix || (suffix === '1' && !hasSeveralParts)) {
-            return c.designator;
-        }
-
-        return c.designator.endsWith(`.${suffix}`)
-            ? c.designator
-            : `${c.designator}.${suffix}`;
-    });
+    const refs = sectionRefs(components);
     const membership = new Map<string, Set<number>>();
     for (const cluster of active.values()) for (const i of cluster.members) {
         const ref = refs[i], ids = membership.get(ref) ?? new Set<number>();
@@ -508,8 +559,8 @@ function findMaybeBlocks(components: Component[], graph: WireGraph, report: Repo
 /** The only runtime entry point. Omit snapshot to read the complete current EasyEDA page. */
 export async function getSchematicGroups(snapshot?: SchematicGroupsSnapshot): Promise<SchematicGroups> {
     for (let attempt = 0; ; attempt++) {
-        const issues = diagnostics();
-        const input = prepareSnapshot(snapshot ?? await collectSnapshot(issues.report), issues.report);
+        const issues = diagnostics(), declarationIssues = diagnostics('declarations');
+        const input = prepareSnapshot(snapshot ?? await collectSnapshot(issues.report, declarationIssues.report), issues.report);
         // Stable input order makes both tie-breaking and compact output independent of API enumeration.
         const components = [...input.components].sort((a, b) => compare(a.designator, b.designator) || a.x - b.x || a.y - b.y);
         try {
@@ -517,10 +568,19 @@ export async function getSchematicGroups(snapshot?: SchematicGroupsSnapshot): Pr
             let maybe_blocks: string[] = [];
             try { maybe_blocks = findMaybeBlocks(components, graph, issues.report); }
             catch (error) { issues.report('Block grouping failed; maybe_blocks unavailable, wire results preserved.', error); }
+            let declared: Pick<SchematicGroups, 'declared_blocks' | 'declared_modules'> = {};
+            try {
+                const refs = sectionRefs(components);
+                declared = declarationResult(components.flatMap((c, i) => c.pcb ? [{ name: c.pcb.block, refs: [refs[i]],
+                    values: { module: c.pcb.module, attach: c.pcb.attach, role: c.pcb.role } }] : []), declarationIssues.report);
+            } catch (error) { declarationIssues.report('PCB block declarations unavailable; heuristic groups preserved.', error); }
+            const declarationErrors = declarationIssues.result().errors;
             return {
                 maybe_blocks,
                 wires: graph.wires.filter(wire => wire.net === null || !shortSymbolsMap.GND.is(wire.net)),
                 ...issues.result(),
+                ...declared,
+                ...(declarationErrors ? { declaration_errors: declarationErrors } : {}),
             };
         } catch (error) {
             if (!(error instanceof InconsistentSnapshot)) throw error;

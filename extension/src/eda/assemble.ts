@@ -14,6 +14,7 @@ import PQueue from 'p-queue';
 import { runAssemblyQueueTask } from './assembly-queue';
 import { getPartLibraryUuid, getPartUuid } from '@copilot/shared/types/lcsc';
 import { storePartUuidOnPrimitive } from './component-part-ref';
+import { assemblyPcbBlock, storePcbBlockOnPrimitive } from './pcb-block-properties';
 
 const assembleQueue = new PQueue({ concurrency: 1 });
 const COPILOT_BLOCK_COLOR = "#808080";
@@ -95,6 +96,8 @@ async function createComponent(component: CircuitAssembly['components'][0], offs
 
         comp = comp.setState_Designator(rmPartFromDesignator(designator));
         storePartUuidOnPrimitive(comp, partUuid);
+        const block = assemblyPcbBlock(component);
+        if (block && !storePcbBlockOnPrimitive(comp, block)) eda.sys_Log.add(`PCB Block property not written for ${designator}`, ESYS_LogType.WARNING);
     }
 
     eda.sys_Log.add(`Place component ${designator} ${JSON.stringify(partUuid)} at ${x} ${y} rot: ${pos.rotate}`);

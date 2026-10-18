@@ -54,6 +54,7 @@ function editor(options: { version?: number; changePage?: boolean; failWires?: b
         },
     };
     const module = load('../src/eda/schematic-groups.ts', {
+        './pcb-block-properties': load('../src/eda/pcb-block-properties.ts', {}),
         './types': {
             shortSymbolsMap: {
                 GND: { is: (name: string) => name.toLowerCase().includes('gnd') },

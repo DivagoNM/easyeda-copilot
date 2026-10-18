@@ -7,6 +7,9 @@ interface SchematicGroups {
   maybe_blocks: string[];
   wires: { net: string | null; pins: string }[];
   errors?: string[];
+  declared_blocks?: { name: string; refs: string; module?: string; attach_to?: string; role?: string }[];
+  declared_modules?: { name: string; blocks: string[] }[];
+  declaration_errors?: string[];
 }
 ```
 
@@ -18,5 +21,13 @@ interface SchematicGroups {
 - A valid ASCII alphanumeric suffix after the last dot of a part name is appended to its block reference (`MAX942CSA+.2` → `U21.2`). A lone `.1` uses the base designator; `.1` is retained when multiple sections with the same designator are present on the page. Missing or invalid suffixes also use the base designator. No library lookup is performed. In `wires`, `U21.7` always means physical pin 7.
 - Each `wires` entry describes one continuous drawn wire island with at least two distinct pin references. Separate islands remain separate even when their net names match. Names recognized as ground, such as `GND`, `AGND`, `DGND` and `PGND`, are omitted. `null` means the net name is unknown.
 - Power flags, net labels and ports are not returned as components or pins. They may strengthen a block suggestion through resolved nets, but do not create a direct wire connection.
+
+## Declared blocks
+
+Designers can declare the PCB hierarchy with component properties: `PCB Block` (block name, required), `PCB Module`, `PCB Attach` (the block this one is a satellite of) and `PCB Role` (`power`, `mcu`, `connector`, …). Circuit assembly writes `PCB Block` from each component's `block_name`, keeping its other properties; net symbols get none.
+
+- `declared_blocks` lists every block with at least one declared component, using the same references as `maybe_blocks`. Unlike `maybe_blocks`, it is explicit: one block may span pages in full mode, and its references are merged.
+- `PCB Module`, `PCB Attach` and `PCB Role` may be set on any member. Conflicting values within one block are reported in `declaration_errors` and omitted; the block is kept. `declared_modules` lists the modules of the declared blocks.
+- `declaration_errors` concerns the declarations only and does not make `maybe_blocks` or `wires` partial. Without declarations, these three keys are absent.
 
 The response excludes page IDs, scores, geometry and library UUIDs. Full-mode arrays follow schematic page order, so repeated references from different pages are not deduplicated. Empty results are `{"maybe_blocks":[],"wires":[]}`. Optional `errors` are bounded, non-fatal diagnostics for a partial result; missing wires do not prove electrical isolation. An unreadable component list, wrong document type or page change remains a fatal error.
