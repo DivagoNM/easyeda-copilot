@@ -29,4 +29,12 @@ These are mistakes that happened, or nearly happened, on real boards built with 
 | Routing, pours, stitching and native API behaviour | [routing-and-api.md](references/routing-and-api.md) |
 | BOM, CPL, stock and fabrication limits | [manufacturing.md](references/manufacturing.md) |
 
+## Related skills
+
+[pcba-design-skills](https://github.com/Keitark/pcba-design-skills) (MIT) is an EDA-neutral, evidence-gated suite for the same lifecycle. This skill keeps only what is specific to EasyEDA Copilot and its tools; for the stages it covers in more depth, use it alongside:
+
+- `qualify-pcba-sourcing`: substitution classification (exact drop-in, bounded change, redesign, reject) with a pin-by-pin and package comparison.
+- `operate-jlcpcb-order`: calibrating the imported CPL against several asymmetric reference parts and reviewing every placed body in the assembler preview.
+- `pcb-layout-review`: layout gates and reusable routing lessons.
+
 For a large review, split it by subsystem (power, MCU and interfaces, radio, BOM and stock), give each reviewer its own netlist extract and datasheets, then triage once: real, likely false positive, accepted trade-off (cite the decision), or unresolved (say what evidence is missing). Independent reviewers finding the same fault from opposite sides is strong evidence.
