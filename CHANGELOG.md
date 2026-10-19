@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Schematic groups
+
+- Declare PCB blocks with component properties: `PCB Block`, `PCB Module`, `PCB Attach` and `PCB Role`. Circuit assembly writes `PCB Block` from each component's `block_name` on both assembly paths, per instance and keeping other properties; a failed write is logged and never fails assembly or skips a component. `get_schematic_groups` returns `declared_blocks`, `declared_modules` and `declaration_errors` next to the heuristic groups, merging a block across pages in full mode; conflicting block attributes are reported and omitted, and a package whose sections are declared in different blocks is reported and left out of them. Copies of a component already on the page never inherit its PCB declarations. Without declarations the result is unchanged. PCB validation receives the declarations separately from heuristic groups, so declaration problems never mark those incomplete.
+
 ### PCB layout
 
 - Honor explicit `PCB_LAYOUT_SUBTREE_WORKERS`, `PCB_BOARD_PACKER_THREADS` and `PCB_POST_PLACE_THREADS` values up to the number of logical cores instead of clamping them to the default. The default stays at half the logical cores, at most 8. Requires a backend that applies the same rule.

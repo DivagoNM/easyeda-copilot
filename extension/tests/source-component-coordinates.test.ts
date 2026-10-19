@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as sourceDocument from '../src/eda/source-document';
+import * as blocks from '../src/eda/pcb-block-properties';
 
 const file = resolve(__dirname, '../src/eda/assemble-source.ts');
 const code = ts.transpileModule(readFileSync(file, 'utf8') + '\nexport const cloneForTest = cloneComponentsIntoSource;', {
@@ -15,6 +16,7 @@ function clone(seedY: number, targetY: number, factor = -1) {
     const exports: Record<string, any> = {};
     runInNewContext(code, { exports, structuredClone, require(name: string) {
         if (name === './source-document') return sourceDocument;
+        if (name === './pcb-block-properties') return blocks;
         if (name === './utils') return { to2: (v: number) => Math.round(v * 100) / 100, rmPartFromDesignator: (v: string) => v };
         if (name === './assembly-symbols') return { getNetFlagKind: () => undefined };
         return {};

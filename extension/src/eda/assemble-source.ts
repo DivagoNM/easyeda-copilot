@@ -22,6 +22,7 @@ import { normalizeMultipartSourceDesignators } from "./multipart-source-designat
 import { LEGACY_PORT_LENGTHS, matchingWirePort, wirePortLabel, wirePortLengths, wirePortMinLength } from './wire-port-layout';
 import { formatUnresolvedNetPortMessage, type UnresolvedNetPortSample } from './unresolved-net-port-message';
 import { readPartUuidFromPrimitive, storePartUuidOnPrimitive } from './component-part-ref';
+import { assemblyPcbBlock, PCB_BLOCK_PROPERTY_KEYS, storePcbBlockOnPrimitive } from './pcb-block-properties';
 import { samePartUuid } from '@copilot/shared/types/lcsc';
 import { DRAWING_LIBRARY_UUID, DRAWING_SHEETS, selectDrawingSheet } from './schematic-page-geometry';
 
@@ -572,6 +573,9 @@ function cloneComponentsIntoSource(
             for (const attributeTemplate of template.attributes) {
                 const attribute = cloneSourceRecord(attributeTemplate);
                 if (!attribute.inner) continue;
+                // The template may be another component on the page; its PCB
+                // declarations are not this instance's. finalize writes PCB Block.
+                if (PCB_BLOCK_PROPERTY_KEYS.has(String(attribute.inner.key))) continue;
 
                 attribute.outer.id = makeSourceId();
                 attribute.outer.ticket = ++ticket;
@@ -2004,11 +2008,14 @@ async function setSourceAndRefresh(source: string, label: string): Promise<void>
 
 async function finalizeSourceComponents(plans: PlannedComponent[], signal?: AbortSignal): Promise<void> {
     const named = new Map<string, string>();
+    const blocks = new Map<string, string>();
     const ids = new Set<string>();
     for (const plan of plans) {
         if (!plan.primitiveId) continue;
         ids.add(plan.primitiveId);
         if (isNamedNetSymbol(plan.input)) named.set(plan.primitiveId, getSpecialSignalName(plan.input));
+        // Each instance gets its own block: clones inherit the seed's properties.
+        else { const block = assemblyPcbBlock(plan.input); if (block) blocks.set(plan.primitiveId, block); }
     }
 
     let completed = 0;
@@ -2030,6 +2037,10 @@ async function finalizeSourceComponents(plans: PlannedComponent[], signal?: Abor
                     ...editable.getState_OtherProperty(),
                     'Global Net Name': net,
                 });
+            }
+            const block = blocks.get(id);
+            if (block && !storePcbBlockOnPrimitive(editable, block)) {
+                eda.sys_Log.add(`[source-assemble] PCB Block property not written for ${id}`, ESYS_LogType.WARNING);
             }
             await withTimeout(editable.done(), 10_000, `Timed out finalizing component ${id}`, signal);
             completed++;

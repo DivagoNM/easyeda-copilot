@@ -8,6 +8,7 @@ import PQueue from 'p-queue';
 import * as symbols from '../src/eda/assembly-symbols';
 import * as source from '../src/eda/source-document';
 import * as refs from '../src/eda/component-part-ref';
+import * as blocks from '../src/eda/pcb-block-properties';
 import * as parts from '@copilot/shared/types/lcsc';
 import { normalizeMultipartSourceDesignators } from '../src/eda/multipart-source-designator';
 
@@ -62,6 +63,7 @@ function fixture() {
         if (name === './assembly-symbols') return symbols;
         if (name === './source-document') return source;
         if (name === './component-part-ref') return refs;
+        if (name === './pcb-block-properties') return blocks;
         if (name === '@copilot/shared/types/lcsc') return parts;
         if (name === './place-component') return { placeComponent: create, getLibraryUuidList: async () => ['lcsc'] };
         if (name === './utils') return { to2: (v: number) => v,
