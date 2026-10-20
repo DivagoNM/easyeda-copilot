@@ -4,7 +4,7 @@
 
 ### Agent docs
 
-- Add the `design-lessons` skill: checklists from real boards built with Copilot, by stage (schematic and library parts, datasheet numbers and power, RF/high voltage/zones, placement, routing and API behaviour, JLCPCB ordering). Linked from the main skill's task table.
+- Add the `design-lessons` skill: checklists from real boards built with Copilot, by stage (schematic and library parts, datasheet numbers and power, RF/high voltage/zones, placement, routing and API behaviour, JLCPCB ordering), plus two general references: the floorplan order with plane plan and thermal budget, and electrical layout rules with sizing data. Linked from the main skill's task table.
 
 ### Schematic groups
 
