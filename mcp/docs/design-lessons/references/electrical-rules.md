@@ -174,6 +174,91 @@ These are the electrical rules that kept coming back while reviewing placements 
   - BOM validated against part numbers.
   - See also [manufacturing](manufacturing.md).
 
+## 10. Current, voltage drop and spacing
+
+- **Trace current** from the IPC-2221 formula, for 1 oz (35 µm) copper. IPC-2152 refines it; inner layers are usually less critical than this table suggests when planes spread the heat.
+
+| Width | Outer layer, +10 °C | Outer layer, +20 °C | Inner layer, +10 °C |
+|---|---|---|---|
+| 0.25 mm | ~0.9 A | ~1.2 A | ~0.45 A |
+| 0.5 mm | ~1.45 A | ~2.0 A | ~0.7 A |
+| 1.0 mm | ~2.4 A | ~3.2 A | ~1.2 A |
+| 2.0 mm | ~4.0 A | ~5.4 A | ~2.0 A |
+| 3.0 mm | ~5.3 A | ~7.2 A | ~2.6 A |
+
+  2 oz copper carries roughly 1.6 times more at the same width. A 20 °C rise is acceptable for most boards, but not near temperature-sensitive parts or batteries.
+- **Voltage drop**: 1 oz copper is about 0.5 mΩ per square, so R ≈ 0.5 mΩ × length / width.
+  - Example: 2 A through 50 mm of a 1 mm trace is 50 squares, about 25 mΩ and 50 mV.
+  - It matters for 3.3 V rails feeding radios and for sense or ground returns of ADCs.
+- **Electrical spacing between conductors** (IPC-2221, sea level). This is functional insulation only; safety creepage and clearance between circuits follow the product standard (see [RF, HV and zones](rf-hv-zones.md)).
+
+| Voltage between conductors | Inner layers | Outer, uncoated | Outer, under solder mask |
+|---|---|---|---|
+| 0–30 V | 0.05 mm | 0.1 mm | 0.05 mm |
+| 31–100 V | 0.1 mm | 0.6 mm | 0.13 mm |
+| 101–300 V | 0.2 mm | 1.25 mm (0.6 mm up to 150 V) | 0.4 mm |
+| 301–500 V | 0.25 mm | 2.5 mm | 0.8 mm |
+
+  Check the current IPC-2221 revision before relying on a value near a boundary, and keep the fab's minimum spacing as a floor.
+
+## 11. Circuit-specific layout
+
+- **Crystals and oscillators**:
+  - crystal and load capacitors within a few millimetres of the oscillator pins, on the same layer, with no vias;
+  - solid ground under them and no other signals routed beneath or between them;
+  - the load capacitors' ground goes straight to the plane next to the IC's ground pin;
+  - keep clocks and switching nodes away.
+- **Switching regulators**:
+  - make the hot loop as small as possible: for a buck, input capacitor, switch and the low-side switch or diode; for a boost, switch, diode and output capacitor;
+  - keep the switch node copper only as large as current and heat require, since it radiates;
+  - route the feedback divider from the output capacitor (Kelvin connection) and away from the switch node and inductor;
+  - keep the inductor away from sensitive inputs and the antenna;
+  - give the regulator's ground pad several vias to the plane.
+- **ADCs and analog inputs**:
+  - analog front end next to the ADC pins;
+  - reference and supply decoupling at the pins, and a ferrite or RC filter from the digital rail;
+  - no digital traces under the analog section;
+  - when a sensor ground must be quiet, bring its return to the ADC's ground area, not across the digital section.
+- **ESD and surge parts**:
+  - at the connector, before any other part;
+  - the clamp's ground path short and wide, straight to the plane or chassis;
+  - the protected line passes through the clamp's pads (pad to pad) instead of branching to it with a stub.
+- **USB**:
+  - 90 Ω pair from the connector through ESD to the IC, symmetric;
+  - the shield connected to ground through the connector's footprint as the datasheet recommends (often an RC to chassis);
+  - VBUS with its own bulk capacitor and, where needed, current limiting.
+- **RS485, CAN and long cables**:
+  - termination resistor at the connector end (120 Ω);
+  - transient suppression next to the connector;
+  - bias resistors sized with the termination fitted (see [power and datasheets](power-and-datasheets.md));
+  - split-termination capacitor to ground for CAN when EMC matters.
+- **RF on two layers**:
+  - a 50 Ω microstrip over a 1.6 mm board is about 3 mm wide, so use a grounded coplanar line, computed with the fab's calculator, to keep the line narrow;
+  - stitch both sides of RF lines and the RF section's edges with ground vias no more than about λ/20 apart at the highest frequency that matters (about 3 mm at 2.4 GHz on FR-4).
+
+## 12. Termination and edge control
+
+- **Series termination**: a resistor at the driver pin, sized so that the driver's output impedance plus the resistor equals the line impedance. On 50 Ω lines with CMOS drivers that is typically 22–33 Ω.
+  - Use it on clocks and fast single-ended lines longer than the threshold in section 1.
+  - It also slows edges a little, which helps EMC.
+- **Parallel termination**: at the receiver end; it draws static current. AC termination (R plus C) avoids that for clocks.
+- **Slow edges deliberately where timing allows**: choose the lowest drive strength or slew-rate setting in the MCU configuration, or add a series resistor. Spread-spectrum clocking, where available, lowers peak emissions.
+
+## 13. Decoupling placement rules of thumb
+
+- **Per IC**: 100 nF at every power pin, with its via to the plane at the pad, plus 1–10 µF per IC or per small group on the same rail.
+- **At each regulator**: the input and output capacitors from its datasheet, at its pins.
+- **Where a rail enters a board section**: one bulk capacitor.
+- **Placement**: the smallest value nearest the pin when values are mixed; the ground side of every decoupling capacitor goes straight to the plane, never through a thin shared trace.
+- **Radio modules**: follow the module's datasheet for bulk at its supply pin (typically 10–22 µF plus 100 nF), because transmit bursts are short and large.
+
+## 14. Testability and bring-up
+
+- **Test points**: one per rail and per key signal (reset, boot or strap pins, UART TX/RX, SWD or JTAG), reachable from one side.
+- **A way to measure each rail's current**: a 0 Ω link, a jumper or a shunt footprint (DNP), so standby current can be checked.
+- **Debug access**: the programming and debug header, or pads, kept even on production boards when possible.
+- **DNP footprints for tuning**: RF matching, filter options and termination options, marked as DNP in the BOM and CPL (see [manufacturing](manufacturing.md)).
+
 ## Further reading
 
 These conclusions were cross-checked against general references. None of their text or tables is reproduced here:
