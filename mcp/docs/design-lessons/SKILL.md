@@ -25,6 +25,7 @@ These are mistakes that happened, or nearly happened, on real boards built with 
 | Library parts, footprints, part swaps and substitutes | [schematic-and-library.md](references/schematic-and-library.md#library-parts-and-footprints) |
 | Datasheet numbers, power tree, protection, standby current | [power-and-datasheets.md](references/power-and-datasheets.md) |
 | Antennas, RF paths, high voltage, isolation and zones | [rf-hv-zones.md](references/rf-hv-zones.md) |
+| Floorplan order before the DSL: enclosure, HV/RF/power zones, layer and plane plan, power and thermal budget, airflow | [floorplan-and-thermal.md](references/floorplan-and-thermal.md) |
 | Fast nets, impedance, return paths, differential pairs, decoupling, current and heat | [electrical-rules.md](references/electrical-rules.md) |
 | Placement DSL and checks after placement | [placement.md](references/placement.md) |
 | Routing, pours, stitching and native API behaviour | [routing-and-api.md](references/routing-and-api.md) |
